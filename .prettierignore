@@ -1,0 +1,12 @@
+dist
+node_modules
+package-lock.json
+package.json
+README.md
+tsconfig.base.json
+tsconfig.json
+.editorconfig
+.prettierignore
+.husky/*
+*.svg
+.gitignore

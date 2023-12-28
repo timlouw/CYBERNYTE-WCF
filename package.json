@@ -1,0 +1,19 @@
+{
+  "scripts": {
+    "start-client": "node build-frontend.js dev client",
+    "build-client": "node build-frontend.js prod client",
+    "start-admin": "node build-frontend.js dev admin",
+    "build-admin": "node build-frontend.js prod admin",
+    "format": "prettier --write \"**/*.{ts,json,html}\"",
+    "prepare": "husky install"
+  },
+  "dependencies": {
+    "murmurhash": "^2.0.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.19.4",
+    "husky": "^8.0.3",
+    "prettier": "3.0.3",
+    "typescript": "5.3.3"
+  }
+}
