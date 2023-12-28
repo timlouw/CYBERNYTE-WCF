@@ -1,4 +1,4 @@
-import { RoutesKeys } from "apps/client/router/routes";
+import { RoutesKeys } from 'apps/client/router/routes';
 
 declare global {
   function html(strings: TemplateStringsArray, ...values: any[]): any;

@@ -1,8 +1,8 @@
 // NB!!! NB!!! anything you want to export needs to be done with the window object
 // specifically for this file because of the dynamic imports and how esbuild bundles them
 
-import { clearAllBindings, clearAllGlobalTimers } from "@services";
-import { ROUTES, ROUTE_NOT_FOUND, Route, RoutesKeys } from "./routes";
+import { clearAllBindings, clearAllGlobalTimers } from '@services';
+import { ROUTES, ROUTE_NOT_FOUND, Route, RoutesKeys } from './routes';
 
 const body = document.querySelector('body') as HTMLElement;
 const setupRouterOutlet = () => {
@@ -10,7 +10,7 @@ const setupRouterOutlet = () => {
     <ui-header></ui-header>
     <div id="router-outlet"></div>
   `;
-}
+};
 setupRouterOutlet();
 const routerOutlet = body.querySelector('#router-outlet') as HTMLElement;
 
@@ -38,21 +38,21 @@ const matchNewRoute = () => {
 
 const injectNewRoute = () => {
   newRoute
-  .componentModule()
-  .then((module: any) => {
-    const componentName = module.default;
+    .componentModule()
+    .then((module: any) => {
+      const componentName = module.default;
 
-    routerOutlet.innerHTML = html`
+      routerOutlet.innerHTML = html`
       <${componentName}></${componentName}>
     `;
 
-    routerOutlet.scrollTo({ top: 0, behavior: 'smooth' });
-  })
-  .catch((error: any) => {
-    console.error(error);
-    window.location.reload();
-  });
-}
+      routerOutlet.scrollTo({ top: 0, behavior: 'smooth' });
+    })
+    .catch((error: any) => {
+      console.error(error);
+      window.location.reload();
+    });
+};
 
 const getMatchingRouteWithParams = (path: string) => {
   routeParams = {};

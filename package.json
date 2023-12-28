@@ -7,12 +7,10 @@
     "format": "prettier --write \"**/*.{ts,json,html}\"",
     "prepare": "husky install"
   },
-  "dependencies": {
-    "murmurhash": "^2.0.1"
-  },
   "devDependencies": {
     "esbuild": "^0.19.4",
     "husky": "^8.0.3",
+    "murmurhash": "^2.0.1",
     "prettier": "3.0.3",
     "typescript": "5.3.3"
   }

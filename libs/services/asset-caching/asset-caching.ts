@@ -1,4 +1,4 @@
-import { imageKeys } from "./asset-list";
+import { imageKeys } from './asset-list';
 
 const imageCachePrefix = 'cached-asset-';
 const cacheVersionKey = 'cached-asset-version';

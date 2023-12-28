@@ -1,4 +1,4 @@
-import { Component, registerComponent, getImage } from '../services';
+import { Component, registerComponent } from '../services';
 
 export default registerComponent(
   { name: 'ui-image', fullHeight: true },
@@ -12,18 +12,18 @@ export default registerComponent(
     }
 
     render = () => {
-      const name = this.getAttribute('name') ?? '';
-      const className = this.getAttribute('className') ?? '';
-      const iconColor = this.getAttribute('iconColor') ?? '';
-      const fullHeight = this.getAttribute('fullHeight') ?? '';
+      // const name = this.getAttribute('name') ?? '';
+      // const className = this.getAttribute('className') ?? '';
+      // const iconColor = this.getAttribute('iconColor') ?? '';
+      // const fullHeight = this.getAttribute('fullHeight') ?? '';
 
-      const image = document.createElement('img');
+      // const image = document.createElement('img');
 
-      getImage(name, iconColor).then((data) => {
-        image.src = data;
-        image.className = `${fullHeight ? 'ui-image-full-height ' : ''}${className}`;
-        this.innerHTML = image.outerHTML;
-      });
+      // getImage(name, iconColor).then((data) => {
+      //   image.src = data;
+      //   image.className = `${fullHeight ? 'ui-image-full-height ' : ''}${className}`;
+      //   this.innerHTML = image.outerHTML;
+      // });
     };
 
     styles = () => {

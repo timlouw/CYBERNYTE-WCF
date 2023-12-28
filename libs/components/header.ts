@@ -1,4 +1,4 @@
-import { Component, registerComponent, setClick, setIfBinding } from "@services";
+import { Component, registerComponent, setClick, setIfBinding } from '@services';
 
 interface MenuItem {
   label: string;

@@ -1,4 +1,1 @@
-export const imageKeys = [
-  'add',
-  'back',
-];
+export const imageKeys = ['add', 'back'];

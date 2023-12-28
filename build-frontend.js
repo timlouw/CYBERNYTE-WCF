@@ -265,13 +265,12 @@ const removeSpecificLineFromFile = (filePath, lineToRemove) => {
   const indexFilePath = path.resolve(entryPoints[0]); // allows to serve with hot reload
 
   if (isProd) {
-    removeSpecificLineFromFile(indexFilePath, hotReloadListener); // allows to serve with hot reload
+    // removeSpecificLineFromFile(indexFilePath, hotReloadListener); // allows to serve with hot reload
     await esbuild.build(buildConfig).catch(() => process.exit(1));
   } else {
-    appendToFile(indexFilePath, hotReloadListener); // allows to serve with hot reload
+    // appendToFile(indexFilePath, hotReloadListener); // allows to serve with hot reload
     const ctx = await esbuild.context(buildConfig);
     await ctx.watch({}).then(() => console.log('Watching for changes...'));
-    // await ctx.serve({ servedir: distDir, port: 4200 }); // allows to serve with hot reload
   }
 })().catch((err) => {
   console.error(err);

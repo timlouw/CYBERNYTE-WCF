@@ -16,7 +16,7 @@ export default registerComponent(
         <div class="landing-container">
           <div class="mb-2">
             <div class="landing-image-container">
-              <ui-image className="lavo-logo-landing-screen" name="lavo-logo"></ui-image>
+              <!-- <ui-image className="lavo-logo-landing-screen" name="lavo-logo"></ui-image> -->
             </div>
             <h1 class="primary-text fw-500 mt-1">Welcome to lavo!</h1>
             <h2 class="primary-text fw-400">Let's get you started</h2>

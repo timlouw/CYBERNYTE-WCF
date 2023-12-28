@@ -3,22 +3,21 @@ import { startShadowDomIfElementListeners } from './data-bindings/data-if-bindin
 
 interface CreateComponentConfig {
   name: string;
-  html?: () => Promise<any>;
-  css?: () => Promise<any>;
   changeDetection?: boolean;
   clickDetection?: boolean;
   fullHeight?: boolean;
 }
 
-interface BaseComponent {
-  new (...params: any[]): Component;
+interface InputComponent {
+  new (...params: any[]): HTMLElement;
 }
 
 export abstract class Component extends HTMLElement {
-  abstract render(): void;
+  abstract render: () => void;
+  abstract styles: () => string;
 }
 
-export const registerComponent = (config: CreateComponentConfig, component: BaseComponent): string => {
+export const registerComponent = (config: CreateComponentConfig, component: InputComponent): string => {
   window.customElements.define(
     config.name,
     class extends component {
@@ -30,11 +29,9 @@ export const registerComponent = (config: CreateComponentConfig, component: Base
       async createComponent() {
         this.setComponentClass();
 
-        await this.setComponentHTML();
-
         this.render();
 
-        await this.setComponentStyles();
+        this.insertAdjacentHTML('beforeend', this.styles());
 
         if (config.clickDetection) {
           startShadowDomClickListeners(this);
@@ -45,55 +42,16 @@ export const registerComponent = (config: CreateComponentConfig, component: Base
         }
       }
 
-      async setComponentHTML() {
-        const html = config.html ? await config.html() : '';
-        if (html.default) this.innerHTML = html.default;
-      }
-
-      async setComponentStyles() {
-        const css = config.css ? await config.css() : '';
-        if (css.default) this.insertAdjacentHTML('beforeend', `<style>${css.default}<style>`);
-      }
-
       setComponentClass() {
         const compClass = this.className + (config.fullHeight ? ' full-height-page-or-component' : '');
         if (compClass) this.className = compClass;
       }
 
       render() {}
+      styles() {
+        return '';
+      }
     },
   );
   return config.name;
 };
-
-export class ShadowDOM {
-  #componentThis;
-  #clickDetection;
-  #changeDetection;
-
-  constructor(compThis: any, clickDetection: boolean, changeDetection: boolean, fullHeight = false) {
-    this.#componentThis = compThis;
-    this.#clickDetection = clickDetection;
-    this.#changeDetection = changeDetection;
-    this.refreshInnerDom(fullHeight);
-  }
-
-  refreshInnerDom = (fullHeight: boolean) => {
-    const compClass = this.#componentThis.className + (fullHeight ? ' full-height-page-or-component' : '');
-    if (compClass) this.#componentThis.className = compClass;
-
-    this.#componentThis.setElementInnerHTML(this.#componentThis);
-
-    this.refreshShadowDomListeners();
-  };
-
-  refreshShadowDomListeners = () => {
-    if (this.#clickDetection) {
-      startShadowDomClickListeners(this.#componentThis);
-    }
-
-    if (this.#changeDetection) {
-      startShadowDomIfElementListeners(this.#componentThis);
-    }
-  };
-}
