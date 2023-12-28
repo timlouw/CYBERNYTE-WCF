@@ -16,9 +16,7 @@ export default registerComponent(
       // const className = this.getAttribute('className') ?? '';
       // const iconColor = this.getAttribute('iconColor') ?? '';
       // const fullHeight = this.getAttribute('fullHeight') ?? '';
-
       // const image = document.createElement('img');
-
       // getImage(name, iconColor).then((data) => {
       //   image.src = data;
       //   image.className = `${fullHeight ? 'ui-image-full-height ' : ''}${className}`;
