@@ -1,5 +1,5 @@
-import { BehaviorSubject } from '../models/BehaviorSubject';
-import { DOM_DATA_INPUT_ATTRIBUTE_NAME, DOM_DATA_OUTPUT_ATTRIBUTE_NAME, Component, registerComponent, getDataInputBinding, getDataOutputBinding, setClick } from '../services';
+import { BehaviorSubject } from '@models';
+import { DOM_DATA_INPUT_ATTRIBUTE_NAME, DOM_DATA_OUTPUT_ATTRIBUTE_NAME, Component, registerComponent, getDataInputBinding, getDataOutputBinding, setClick } from '@services';
 
 export default registerComponent(
   { name: 'ui-multi-select', clickDetection: true },

@@ -392,7 +392,7 @@ const DevConfig = {
   const buildConfig = isProd ? ProdConfig : DevConfig;
   const indexFilePath = path.resolve(entryPoints[0]); // allows to serve with hot reload
 
-  if (isProd) {
+  if (isProd && serve !== 'serve') {
     removeSpecificLineFromFile(indexFilePath, hotReloadListener); // allows to serve with hot reload
     await esbuild.build(buildConfig).catch(() => process.exit(1));
   } else {

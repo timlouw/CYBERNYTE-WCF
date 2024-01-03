@@ -1,4 +1,4 @@
-import { DOM_DATA_OUTPUT_ATTRIBUTE_NAME, getDataOutputBinding, setClick, Component, registerComponent } from '../services';
+import { DOM_DATA_OUTPUT_ATTRIBUTE_NAME, getDataOutputBinding, setClick, Component, registerComponent } from '@services';
 
 export default registerComponent(
   { name: 'ui-button-group', clickDetection: true },

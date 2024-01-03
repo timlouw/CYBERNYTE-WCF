@@ -1,4 +1,4 @@
-import { DOM_DATA_INPUT_ATTRIBUTE_NAME, Component, registerComponent, getDataInputBinding } from '../services';
+import { DOM_DATA_INPUT_ATTRIBUTE_NAME, Component, registerComponent, getDataInputBinding } from '@services';
 
 export default registerComponent(
   { name: 'ui-icon-button' },

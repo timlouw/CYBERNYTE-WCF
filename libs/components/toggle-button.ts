@@ -1,4 +1,4 @@
-import { DOM_DATA_OUTPUT_ATTRIBUTE_NAME, Component, registerComponent, getDataOutputBinding, setClick } from '../services';
+import { DOM_DATA_OUTPUT_ATTRIBUTE_NAME, Component, registerComponent, getDataOutputBinding, setClick } from '@services';
 
 export default registerComponent(
   { name: 'ui-toggle-button', clickDetection: true },

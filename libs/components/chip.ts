@@ -1,4 +1,4 @@
-import { Component, registerComponent } from '../services';
+import { Component, registerComponent } from '@services';
 
 export default registerComponent(
   { name: 'ui-chip' },

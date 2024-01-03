@@ -9,7 +9,7 @@ export const setClick = (key: string, callback: (event: Event) => void) => {
   globalClickCallbacks[key] = callback;
 };
 
-export const startShadowDomClickListeners = (shadowDom: HTMLElement) => {
+export const startShadowDomClickListeners = (shadowDom: HTMLElement | ShadowRoot) => {
   queryForCallbackBindingElements(shadowDom);
   startMutationObserver(shadowDom);
 };

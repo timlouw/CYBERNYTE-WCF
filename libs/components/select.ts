@@ -6,7 +6,7 @@ import {
   getDataInputBinding,
   getDataOutputBinding,
   getDataValidationBinding,
-} from '../services';
+} from '@services';
 
 export default registerComponent(
   { name: 'ui-select' },

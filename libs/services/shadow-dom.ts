@@ -1,6 +1,3 @@
-import { startShadowDomClickListeners } from './data-bindings/data-click-binding';
-import { startShadowDomIfElementListeners } from './data-bindings/data-if-binding';
-
 interface CreateComponentConfig {
   name: string;
   changeDetection?: boolean;
@@ -13,8 +10,20 @@ interface InputComponent {
 }
 
 export abstract class Component extends HTMLElement {
-  abstract render: () => void;
+  abstract render: () => string;
   abstract styles: () => string;
+}
+
+const stylesMap = new Map<string, CSSStyleSheet>();
+const domNodeMap = new Map<string, DocumentFragment>();
+
+const generateCacheKey = (name: string, attributes: NamedNodeMap) => {
+  const attrs: {[key: string]: string} = {};
+  for (let i = 0; i < attributes.length; i++) {
+    const attr = attributes[i];
+    attrs[attr.name] = attr.value;
+  }
+  return `${name}-${JSON.stringify(attrs)}`;
 }
 
 export const registerComponent = (config: CreateComponentConfig, component: InputComponent): string => {
@@ -27,27 +36,35 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
       }
 
       async createComponent() {
-        this.setComponentClass();
+        this.attachShadow({ mode: 'open' });
+        if (this.shadowRoot) {
 
-        this.render();
+          const styleSheet = stylesMap.get(config.name) as CSSStyleSheet;
+          if (styleSheet) {
+            this.shadowRoot.adoptedStyleSheets = [styleSheet];
+          } else {
+            const styleSheet = new CSSStyleSheet();
+            styleSheet.replaceSync(this.styles());
+            this.shadowRoot.adoptedStyleSheets = [styleSheet];
+            stylesMap.set(config.name, styleSheet);
+          }
 
-        this.insertAdjacentHTML('beforeend', this.styles());
-
-        if (config.clickDetection) {
-          startShadowDomClickListeners(this);
+          const key = generateCacheKey(config.name, this.attributes);
+          let domFragment = domNodeMap.get(key);
+          if (!domFragment) {
+            const tempContainer = document.createElement('template');
+            tempContainer.innerHTML = this.render();
+            domFragment = tempContainer.content;
+            domNodeMap.set(key, domFragment);
+          }
+          this.shadowRoot.appendChild(domFragment.cloneNode(true));
         }
 
-        if (config.changeDetection) {
-          startShadowDomIfElementListeners(this);
-        }
       }
 
-      setComponentClass() {
-        const compClass = this.className + (config.fullHeight ? ' full-height-page-or-component' : '');
-        if (compClass) this.className = compClass;
+      render() {
+        return '';
       }
-
-      render() {}
       styles() {
         return '';
       }

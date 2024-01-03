@@ -1,6 +1,4 @@
-import { DOM_DATA_OUTPUT_ATTRIBUTE_NAME, Component, registerComponent, getDataOutputBinding, getDataValidationBinding } from '../services';
-
-import {} from '../services';
+import { DOM_DATA_OUTPUT_ATTRIBUTE_NAME, Component, registerComponent, getDataOutputBinding, getDataValidationBinding } from '@services';
 
 export default registerComponent(
   { name: 'ui-input' },
