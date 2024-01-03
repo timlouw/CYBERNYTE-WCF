@@ -38,8 +38,8 @@ let hashedRouterJSFileName = '';
 
 let totalBundleSizeInBytes = 0;
 
-const hotReloadListener = "new EventSource('/hot-reload').onmessage = (event) => location.reload();";
 const serverPort = 4200;
+const hotReloadListener = "<script>new EventSource('/hot-reload').onmessage = (event) => location.reload();</script>";
 let serverStarted = false;
 let clients = [];
 
@@ -215,6 +215,7 @@ const copyIndexHTMLIntoDistAndStartServer = () => {
   const indexCSSFilePlaceholderText = 'INDEX_CSS_FILE_PLACEHOLDER';
   const indexJSFilePlaceholderText = 'INDEX_JS_FILE_PLACEHOLDER';
   const routerJSFilePlaceholderText = 'ROUTER_JS_FILE_PLACEHOLDER';
+  const hotReloadPlaceHolderText = 'HOT_RELOAD_PLACEHOLDER';
 
   fs.readFile(inputHTMLFilePath, 'utf8', (readErr, data) => {
     if (readErr) throw readErr;
@@ -222,7 +223,8 @@ const copyIndexHTMLIntoDistAndStartServer = () => {
     let updatedData = data
       .replace(indexCSSFilePlaceholderText, hashedIndexCSSFileName)
       .replace(indexJSFilePlaceholderText, hashedIndexJSFileName)
-      .replace(routerJSFilePlaceholderText, hashedRouterJSFileName);
+      .replace(routerJSFilePlaceholderText, hashedRouterJSFileName)
+      .replace(hotReloadPlaceHolderText, serve === 'serve' ? hotReloadListener : '');
 
     fs.writeFile(outputHTMLFilePath, updatedData, 'utf8', (writeErr) => {
       const sizeInBytes = Buffer.byteLength(updatedData, 'utf8');
@@ -311,26 +313,6 @@ const typeChecker = () => {
   });
 };
 
-// HOT RELOAD FUNCTIONS -------------------------------------------------------------------------------------------------------------------------------------
-const appendToFile = (filePath, lineToAdd) => {
-  const data = fs.readFileSync(filePath, 'utf8');
-  const lines = data.split('\n');
-  const lineIndex = lines.indexOf(lineToAdd);
-  if (lineIndex > -1) return;
-  lines.push(lineToAdd);
-  fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
-};
-
-const removeSpecificLineFromFile = (filePath, lineToRemove) => {
-  const data = fs.readFileSync(filePath, 'utf8');
-  const lines = data.split('\n');
-  const lineIndex = lines.indexOf(lineToRemove);
-  if (lineIndex > -1) {
-    lines.splice(lineIndex, 1);
-    fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
-  }
-};
-
 // CUSTOM ESBUILD PLUGINS ------------------------------------------------------------------------------------------------------------------------
 const customHashingPlugin = {
   name: 'custom-hashing-plugin',
@@ -390,13 +372,10 @@ const DevConfig = {
   console.info(blueOutput, `Running ${environment} build...`);
 
   const buildConfig = isProd ? ProdConfig : DevConfig;
-  const indexFilePath = path.resolve(entryPoints[0]); // allows to serve with hot reload
 
   if (isProd && serve !== 'serve') {
-    removeSpecificLineFromFile(indexFilePath, hotReloadListener); // allows to serve with hot reload
     await esbuild.build(buildConfig).catch(() => process.exit(1));
   } else {
-    appendToFile(indexFilePath, hotReloadListener); // allows to serve with hot reload
     const ctx = await esbuild.context(buildConfig);
     await ctx.watch({}).then(() => console.info(blueOutput, 'Watching for changes...'));
   }

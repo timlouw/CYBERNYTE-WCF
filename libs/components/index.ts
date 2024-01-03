@@ -8,3 +8,4 @@ export * from './input';
 export * from './loader';
 export * from './select';
 export * from './toggle-button';
+export * from './test';
