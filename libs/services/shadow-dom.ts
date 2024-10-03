@@ -1,4 +1,4 @@
-import { startShadowDomIfElementListeners } from "apps/client";
+import { startShadowDomIfElementListeners } from 'apps/client';
 
 interface CreateComponentConfig {
   name: string;

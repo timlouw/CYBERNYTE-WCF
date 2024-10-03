@@ -16,7 +16,7 @@ export default registerComponent(
 
     boxClick(event: MouseEvent) {
       const target = event.target as HTMLElement;
-      console.log("target", target.getAttribute('click-id'));
+      console.log('target', target.getAttribute('click-id'));
       this.ifBindingBS.next(!this.ifBindingBS.getValue());
     }
 
