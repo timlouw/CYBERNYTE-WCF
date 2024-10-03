@@ -1,7 +1,7 @@
 // NB!!! NB!!! anything you want to export needs to be done with the window object
 // specifically for this file because of the dynamic imports and how esbuild bundles them
 
-import { clearAllBindings, clearAllGlobalTimers } from '@services';
+import { clearAllGlobalTimers } from '@services';
 import { ROUTES, ROUTE_NOT_FOUND, Route, RoutesKeys } from './routes';
 
 const body = document.querySelector('body') as HTMLElement;
@@ -19,7 +19,6 @@ let routeParams: { [key: string]: any } = {};
 
 const handleLocation = async () => {
   clearAllGlobalTimers();
-  clearAllBindings();
   matchNewRoute();
 };
 

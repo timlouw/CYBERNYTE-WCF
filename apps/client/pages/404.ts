@@ -8,7 +8,7 @@ export default registerComponent(
         window.navigate('/');
       });
 
-      this.innerHTML = html`
+      return html`
         <div class="testContainer" style="text-align: center">
           <h1>404</h1>
           <h1>Not Found</h1>

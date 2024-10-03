@@ -38,7 +38,6 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
       async createComponent() {
         this.attachShadow({ mode: 'open' });
         if (this.shadowRoot) {
-
           const styleSheet = stylesMap.get(config.name) as CSSStyleSheet;
           if (styleSheet) {
             this.shadowRoot.adoptedStyleSheets = [styleSheet];
@@ -59,7 +58,6 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
           }
           this.shadowRoot.appendChild(domFragment.cloneNode(true));
         }
-
       }
 
       render() {
