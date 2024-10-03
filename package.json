@@ -1,11 +1,11 @@
 {
   "scripts": {
-    "start": "node build-frontend.js dev client serve",
-    "start-prod": "node build-frontend.js prod client serve",
-    "build": "node build-frontend.js prod client",
-    "start-admin": "node build-frontend.js dev admin serve",
-    "start-admin-prod": "node build-frontend.js prod admin serve",
-    "build-admin": "node build-frontend.js prod admin",
+    "start": "node scripts/build-frontend.js dev client serve",
+    "start-prod": "node scripts/build-frontend.js prod client serve",
+    "build": "node scripts/build-frontend.js prod client",
+    "start-admin": "node scripts/build-frontend.js dev admin serve",
+    "start-admin-prod": "node scripts/build-frontend.js prod admin serve",
+    "build-admin": "node scripts/build-frontend.js prod admin",
     "format": "prettier --write \"**/*.{ts,json,html}\"",
     "prepare": "husky install"
   },

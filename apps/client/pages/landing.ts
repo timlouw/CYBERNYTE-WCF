@@ -4,7 +4,7 @@ export default registerComponent(
   { name: 'ui-landing-page' },
   class extends Component {
     render = () => {
-      return `
+      return html`
         HELLO
         <my-element color="red" user="Tod"></my-element>
         <my-element color="green"></my-element>

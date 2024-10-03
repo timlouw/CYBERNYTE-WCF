@@ -1,3 +1,5 @@
+import { startShadowDomIfElementListeners } from "apps/client";
+
 interface CreateComponentConfig {
   name: string;
   changeDetection?: boolean;
@@ -12,6 +14,7 @@ interface InputComponent {
 export abstract class Component extends HTMLElement {
   abstract render: () => string;
   abstract styles: () => string;
+  bindClickListeners?: () => void;
 }
 
 const stylesMap = new Map<string, CSSStyleSheet>();
@@ -39,15 +42,24 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
           }
 
           this.shadowRoot.innerHTML = this.render();
+
+          // if (config.changeDetection) {
+          //   startShadowDomIfElementListeners(this.shadowRoot);
+          // }
+
+          // if (this.bindClickListeners && config.clickDetection) {
+          //   this.bindClickListeners();
+          // }
         }
       }
 
       render() {
-        return '';
+        return html``;
       }
       styles() {
         return '';
       }
+      bindClickListeners() {}
     },
   );
   return config.name;

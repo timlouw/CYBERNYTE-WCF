@@ -1,25 +1,24 @@
-import { Component, getRandomNumber, registerComponent, setClick, setIfBinding } from '@services';
+import { Component, registerComponent, setIfBinding } from '@services';
 
 export default registerComponent(
   { name: 'my-element', clickDetection: true, changeDetection: true },
   class extends Component {
     color = this.getAttribute('color');
-    random = getRandomNumber(0, 100000) + 'buttonClickBinding';
-    clickBinding = this.random + 'buttonClickBinding';
-    ifBinding = this.random + 'buttonClickBinding';
-    ifBindingBS = setIfBinding(this.ifBinding, true);
+    dataID = this.getAttribute('data-id') + 'ifBinding';
+    ifBindingBS = setIfBinding(this.dataID ?? '', true);
 
     render = () => {
-      setClick(this.clickBinding, () => {
-        console.log(this.clickBinding);
-        this.ifBindingBS.next(!this.ifBindingBS.getValue());
-      });
-
-      return `
-        <div class="box" style="background-color: ${this.color}" data-if="${this.ifBinding}"></div>
-        <div class="box2" data-click="${this.clickBinding}"></div>
+      return html`
+        <div class="box" style="background-color: ${this.color}" data-if="${this.dataID}"></div>
+        <div class="box2" @click="${(event: MouseEvent) => this.boxClick(event)}"></div>
       `;
     };
+
+    boxClick(event: MouseEvent) {
+      const target = event.target as HTMLElement;
+      console.log("target", target.getAttribute('click-id'));
+      this.ifBindingBS.next(!this.ifBindingBS.getValue());
+    }
 
     styles = () => {
       return `
