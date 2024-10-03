@@ -1,5 +1,3 @@
-import { startShadowDomIfElementListeners } from 'apps/client';
-
 interface CreateComponentConfig {
   name: string;
   changeDetection?: boolean;
