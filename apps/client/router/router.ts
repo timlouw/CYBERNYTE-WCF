@@ -6,9 +6,7 @@ import { ROUTES, ROUTE_NOT_FOUND, Route, RoutesKeys } from './routes';
 
 const body = document.querySelector('body') as HTMLElement;
 const setupRouterOutlet = () => {
-  body.innerHTML = html`
-    <div id="router-outlet"></div>
-  `;
+  body.innerHTML = html` <div id="router-outlet"></div> `;
 };
 setupRouterOutlet();
 const routerOutlet = body.querySelector('#router-outlet') as HTMLElement;

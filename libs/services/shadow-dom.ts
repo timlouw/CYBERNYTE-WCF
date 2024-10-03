@@ -18,13 +18,13 @@ const stylesMap = new Map<string, CSSStyleSheet>();
 const domNodeMap = new Map<string, DocumentFragment>();
 
 const generateCacheKey = (name: string, attributes: NamedNodeMap) => {
-  const attrs: {[key: string]: string} = {};
+  const attrs: { [key: string]: string } = {};
   for (let i = 0; i < attributes.length; i++) {
     const attr = attributes[i];
     attrs[attr.name] = attr.value;
   }
   return `${name}-${JSON.stringify(attrs)}`;
-}
+};
 
 export const registerComponent = (config: CreateComponentConfig, component: InputComponent): string => {
   window.customElements.define(
