@@ -1,3 +1,5 @@
+import { startShadowDomClickListeners, startShadowDomIfElementListeners } from "apps/client";
+
 interface CreateComponentConfig {
   name: string;
   changeDetection?: boolean;
@@ -15,16 +17,7 @@ export abstract class Component extends HTMLElement {
 }
 
 const stylesMap = new Map<string, CSSStyleSheet>();
-const domNodeMap = new Map<string, DocumentFragment>();
-
-const generateCacheKey = (name: string, attributes: NamedNodeMap) => {
-  const attrs: { [key: string]: string } = {};
-  for (let i = 0; i < attributes.length; i++) {
-    const attr = attributes[i];
-    attrs[attr.name] = attr.value;
-  }
-  return `${name}-${JSON.stringify(attrs)}`;
-};
+const styleSheet = new CSSStyleSheet();
 
 export const registerComponent = (config: CreateComponentConfig, component: InputComponent): string => {
   window.customElements.define(
@@ -38,25 +31,16 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
       async createComponent() {
         this.attachShadow({ mode: 'open' });
         if (this.shadowRoot) {
-          const styleSheet = stylesMap.get(config.name) as CSSStyleSheet;
-          if (styleSheet) {
-            this.shadowRoot.adoptedStyleSheets = [styleSheet];
+          const cachedStyleSheet = stylesMap.get(config.name) as CSSStyleSheet;
+          if (cachedStyleSheet) {
+            this.shadowRoot.adoptedStyleSheets = [cachedStyleSheet];
           } else {
-            const styleSheet = new CSSStyleSheet();
             styleSheet.replaceSync(this.styles());
             this.shadowRoot.adoptedStyleSheets = [styleSheet];
             stylesMap.set(config.name, styleSheet);
           }
 
-          const key = generateCacheKey(config.name, this.attributes);
-          let domFragment = domNodeMap.get(key);
-          if (!domFragment) {
-            const tempContainer = document.createElement('template');
-            tempContainer.innerHTML = this.render();
-            domFragment = tempContainer.content;
-            domNodeMap.set(key, domFragment);
-          }
-          this.shadowRoot.appendChild(domFragment.cloneNode(true));
+          this.shadowRoot.innerHTML = this.render();
         }
       }
 
