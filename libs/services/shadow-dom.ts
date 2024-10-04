@@ -16,7 +16,6 @@ export abstract class Component extends HTMLElement {
 }
 
 const stylesMap = new Map<string, CSSStyleSheet>();
-const styleSheet = new CSSStyleSheet();
 
 export const registerComponent = (config: CreateComponentConfig, component: InputComponent): string => {
   window.customElements.define(
@@ -30,10 +29,11 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
       async createComponent() {
         this.attachShadow({ mode: 'open' });
         if (this.shadowRoot) {
-          const cachedStyleSheet = stylesMap.get(config.name) as CSSStyleSheet;
-          if (cachedStyleSheet) {
-            this.shadowRoot.adoptedStyleSheets = [cachedStyleSheet];
+          const styleSheet = stylesMap.get(config.name) as CSSStyleSheet;
+          if (styleSheet) {
+            this.shadowRoot.adoptedStyleSheets = [styleSheet];
           } else {
+            const styleSheet = new CSSStyleSheet();
             styleSheet.replaceSync(this.styles());
             this.shadowRoot.adoptedStyleSheets = [styleSheet];
             stylesMap.set(config.name, styleSheet);
