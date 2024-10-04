@@ -6,9 +6,9 @@ export default registerComponent(
     render = () => {
       return html`
         HELLO
-        <my-element color="red" user="Tod"></my-element>
-        <my-element color="green"></my-element>
-        <my-element color="orange"></my-element>
+        <my-element color="red"></my-element>
+        <my-element color="red"></my-element>
+        <my-element color="red"></my-element>
         <my-element color="red"></my-element>
         <my-element color="red"></my-element>
         <my-element color="red"></my-element>

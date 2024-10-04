@@ -16,8 +16,44 @@ export abstract class Component extends HTMLElement {
 }
 
 const stylesMap = new Map<string, CSSStyleSheet>();
+const observerMap = new Map<string, IntersectionObserver>();
+
+const handleVisibility = (config: CreateComponentConfig) => {
+  const entriesCallback = (entries: IntersectionObserverEntry[]) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        console.log('Element is visible:', entry.target);
+        const targetComponent = entry.target as Component;
+
+        if (targetComponent.shadowRoot) {
+          if (targetComponent.bindClickListeners) {
+            targetComponent.bindClickListeners();
+          }
+        }
+
+        const observer = observerMap.get(config.name);
+        if (observer) observer.unobserve(targetComponent);
+      }
+    });
+  };
+
+  return new IntersectionObserver(entriesCallback, {
+    root: null,
+    threshold: 0.1, // Visibility threshold
+  });
+};
 
 export const registerComponent = (config: CreateComponentConfig, component: InputComponent): string => {
+  let observer: any = null;
+
+  if (config.clickDetection) {
+    observer = observerMap.get(config.name)
+    if (!observer) {
+      observer = handleVisibility(config);
+      observerMap.set(config.name, observer);
+    }
+  }
+
   window.customElements.define(
     config.name,
     class extends component {
@@ -41,13 +77,9 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
 
           this.shadowRoot.innerHTML = this.render();
 
-          // if (config.changeDetection) {
-          //   startShadowDomIfElementListeners(this.shadowRoot);
-          // }
-
-          // if (this.bindClickListeners && config.clickDetection) {
-          //   this.bindClickListeners();
-          // }
+          if (config.clickDetection) {
+            observer.observe(this);
+          }
         }
       }
 

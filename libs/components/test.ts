@@ -1,11 +1,11 @@
-import { Component, registerComponent, setIfBinding } from '@services';
+import { Component, registerComponent } from '@services';
 
 export default registerComponent(
   { name: 'my-element', clickDetection: true, changeDetection: true },
   class extends Component {
     color = this.getAttribute('color');
     dataID = this.getAttribute('data-id') + 'ifBinding';
-    ifBindingBS = setIfBinding(this.dataID ?? '', true);
+    // ifBindingBS = setIfBinding(this.dataID ?? '', true);
 
     render = () => {
       return html`
@@ -17,7 +17,7 @@ export default registerComponent(
     boxClick(event: MouseEvent) {
       const target = event.target as HTMLElement;
       console.log('target', target.getAttribute('click-id'));
-      this.ifBindingBS.next(!this.ifBindingBS.getValue());
+      // this.ifBindingBS.next(!this.ifBindingBS.getValue());
     }
 
     styles = () => {
