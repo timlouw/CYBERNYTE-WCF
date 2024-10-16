@@ -1,7 +1,7 @@
 import fs from 'fs';
 import http from 'http';
 import zlib from 'zlib';
-import { exec } from 'child_process';
+// import { exec } from 'child_process';
 import serveStatic from 'serve-static';
 import finalhandler from 'finalhandler';
 import murmurhash from 'murmurhash';
@@ -178,20 +178,20 @@ const startServer = (): void => {
 };
 
 const openLocalhostInBrowser = (url: string): void => {
-  switch (process.platform) {
-    case 'darwin': // macOS
-      exec(`open ${url}`);
-      break;
-    case 'win32': // Windows
-      exec(`start ${url}`);
-      break;
-    case 'linux': // Linux
-      exec(`xdg-open ${url}`);
-      break;
-    default:
-      console.log('Platform not recognized. Unable to open browser automatically.');
-      break;
-  }
+  // switch (process.platform) {
+  //   case 'darwin': // macOS
+  //     exec(`open ${url}`);
+  //     break;
+  //   case 'win32': // Windows
+  //     exec(`start ${url}`);
+  //     break;
+  //   case 'linux': // Linux
+  //     exec(`xdg-open ${url}`);
+  //     break;
+  //   default:
+  //     console.log('Platform not recognized. Unable to open browser automatically.');
+  //     break;
+  // }
 };
 
 const setupSSE = (server: http.Server): void => {

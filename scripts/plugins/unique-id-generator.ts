@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { Plugin } from 'esbuild';
+import { isIdentifier, forEachChild, createSourceFile, ScriptTarget, SourceFile, ScriptKind, Node } from 'typescript';
 
 interface ClickListener {
   clickId: string;
@@ -18,7 +19,7 @@ export const customElementUniqueIdGeneratorPlugin: Plugin = {
     build.onLoad({ filter: /\.ts$/ }, async (args) => {
       const source = await fs.promises.readFile(args.path, 'utf8');
 
-      // Step 1: Collect custom element names
+      // Step 1: Collect custom element names using regex
       const registerComponentRegex = /registerComponent\(\s*{[^}]*name:\s*['"]([^'"]+)['"]/g;
       let match: RegExpExecArray | null;
       while ((match = registerComponentRegex.exec(source)) !== null) {
@@ -71,20 +72,19 @@ export const customElementUniqueIdGeneratorPlugin: Plugin = {
       }
 
       const classTwoRegex = /class\s+extends\s+Component\s*{/g;
-      console.log('args.path', args.path);
       modifiedSource = modifiedSource.replace(classTwoRegex, (match) => {
         const bindListenersFunction = `
           bindClickListeners = () => {
             ${clickListeners
-              .map((listener, counter) => {
-                return `
+            .map((listener, counter) => {
+              return `
                 const element${counter} = this.shadowRoot.querySelector(\`[click-id="${listener.clickId}"]\`);
                 if (element${counter}) {
                   element${counter}.addEventListener('click', ${listener.handler});
                 }
               `.trim();
-              })
-              .join('\n')}
+            })
+            .join('\n')}
           };
         `;
 
@@ -94,6 +94,39 @@ export const customElementUniqueIdGeneratorPlugin: Plugin = {
           ;\n
         `;
       });
+
+      // Cache identifiers in a Set to avoid repeated traversals
+      function getIdentifiersCache(sourceFile: SourceFile): Set<string> {
+        const identifierCache = new Set<string>();
+
+        function visit(node: Node) {
+          if (isIdentifier(node)) {
+            identifierCache.add(node.text);
+          }
+          forEachChild(node, visit);
+        }
+
+        visit(sourceFile);
+        return identifierCache;
+      }
+
+      // Example usage
+      const sourceFile = createSourceFile(
+        args.path,
+        source,
+        ScriptTarget.ESNext,
+        true,
+        ScriptKind.TS
+      );
+
+      const identifierCache = getIdentifiersCache(sourceFile);
+      const targetIdentifier = "registerComponent"; // replace with the identifier you're looking for
+
+      if (identifierCache.has(targetIdentifier)) {
+        console.log(`Identifier "${targetIdentifier}" found.`);
+      } else {
+        console.log(`Identifier "${targetIdentifier}" not found.`);
+      }
 
       return {
         contents: modifiedSource,
