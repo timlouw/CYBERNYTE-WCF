@@ -1,16 +1,26 @@
-const fs = require('fs');
+import fs from 'fs';
+import { Plugin } from 'esbuild';
 
-const customElementUniqueIdGeneratorPlugin = {
+interface ClickListener {
+  clickId: string;
+  handler: string;
+}
+
+const generateRandomId = (): string => {
+  return `id-${Math.random().toString(36).substring(2, 15)}`;
+};
+
+export const customElementUniqueIdGeneratorPlugin: Plugin = {
   name: 'element-unique-id-generator-plugin',
   setup(build) {
-    let customElements = new Set();
+    let customElements = new Set<string>();
 
     build.onLoad({ filter: /\.ts$/ }, async (args) => {
       const source = await fs.promises.readFile(args.path, 'utf8');
 
       // Step 1: Collect custom element names
       const registerComponentRegex = /registerComponent\(\s*{[^}]*name:\s*['"]([^'"]+)['"]/g;
-      let match;
+      let match: RegExpExecArray | null;
       while ((match = registerComponentRegex.exec(source)) !== null) {
         customElements.add(match[1]);
       }
@@ -25,8 +35,8 @@ const customElementUniqueIdGeneratorPlugin = {
 
       // Step 3: Modify HTML inside template literals and process custom elements and @click events
       const templateLiteralRegex = /html`([\s\S]*?)`/g;
-      let templateMatch;
-      let clickListeners = [];
+      let templateMatch: RegExpExecArray | null;
+      let clickListeners: ClickListener[] = [];
 
       while ((templateMatch = templateLiteralRegex.exec(modifiedSource)) !== null) {
         let templateContent = templateMatch[1];
@@ -45,14 +55,14 @@ const customElementUniqueIdGeneratorPlugin = {
 
         // Step 5: Check for @click events and replace them with `click-id`
         const clickEventRegex = /@click="([^"]+)"/g;
-        let clickMatch;
+        let clickMatch: RegExpExecArray | null;
         let clickCounter = 0;
 
         while ((clickMatch = clickEventRegex.exec(templateContent)) !== null) {
           clickCounter++;
           const uniqueClickId = '${this.uniqueID}-click-' + clickCounter;
           const handler = clickMatch[1].trim().slice(2, -1);
-          clickListeners.push({ clickId: uniqueClickId, handler: handler });
+          clickListeners.push({ clickId: uniqueClickId, handler });
           templateContent = templateContent.replace(clickMatch[0], 'click-id="' + uniqueClickId + '"');
         }
 
@@ -61,18 +71,20 @@ const customElementUniqueIdGeneratorPlugin = {
       }
 
       const classTwoRegex = /class\s+extends\s+Component\s*{/g;
-      console.log("args.path", args.path)
+      console.log('args.path', args.path);
       modifiedSource = modifiedSource.replace(classTwoRegex, (match) => {
         const bindListenersFunction = `
           bindClickListeners = () => {
-            ${clickListeners.map((listener, counter) => {
-              return `
+            ${clickListeners
+              .map((listener, counter) => {
+                return `
                 const element${counter} = this.shadowRoot.querySelector(\`[click-id="${listener.clickId}"]\`);
                 if (element${counter}) {
                   element${counter}.addEventListener('click', ${listener.handler});
                 }
               `.trim();
-            }).join('\n')}
+              })
+              .join('\n')}
           };
         `;
 
@@ -90,9 +102,3 @@ const customElementUniqueIdGeneratorPlugin = {
     });
   },
 };
-
-const generateRandomId = () => {
-  return `id-${Math.random().toString(36).substring(2, 15)}`;
-};
-
-module.exports = customElementUniqueIdGeneratorPlugin;

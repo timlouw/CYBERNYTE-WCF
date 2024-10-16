@@ -1,8 +1,6 @@
 interface CreateComponentConfig {
   name: string;
-  changeDetection?: boolean;
   clickDetection?: boolean;
-  fullHeight?: boolean;
 }
 
 interface InputComponent {
@@ -20,7 +18,7 @@ const observerMap = new Map<string, IntersectionObserver>();
 
 const handleVisibility = (config: CreateComponentConfig) => {
   const entriesCallback = (entries: IntersectionObserverEntry[]) => {
-    entries.forEach(entry => {
+    entries.forEach((entry) => {
       if (entry.isIntersecting) {
         console.log('Element is visible:', entry.target);
         const targetComponent = entry.target as Component;
@@ -47,7 +45,7 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
   let observer: any = null;
 
   if (config.clickDetection) {
-    observer = observerMap.get(config.name)
+    observer = observerMap.get(config.name);
     if (!observer) {
       observer = handleVisibility(config);
       observerMap.set(config.name, observer);

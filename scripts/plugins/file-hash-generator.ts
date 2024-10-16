@@ -1,33 +1,25 @@
-const fs = require('fs');
-const http = require('http');
-const zlib = require('zlib');
-const { exec } = require('child_process');
-const serveStatic = require('serve-static');
-const finalhandler = require('finalhandler');
-const murmurhash = require('murmurhash');
-const path = require('path');
-
-// CONSOLE COLORS -------------------------------------------------------------------------------------------------------------------------------
-const greenOutput = '\x1b[32m%s\x1b[0m';
-const yellowOutput = '\x1b[33m%s\x1b[0m';
-
-// SCRIPT ARGUMENTS -----------------------------------------------------------------------------------------------------------------------------
-const environment = process.argv[2] || 'dev';
-const application = process.argv[3] || 'client';
-const serve = process.argv[4] || '';
-
-// CONSTANTS ------------------------------------------------------------------------------------------------------------------------------------
-const isProd = environment === 'prod';
-
-const distDir = `./dist/${application}`;
-const assetsInputDir = `./apps/${application}/assets`;
-const assetsOutputDir = `./dist/${application}/assets`;
-const indexHTMLFileName = 'index.html';
-const inputHTMLFilePath = `./apps/${indexHTMLFileName}`;
-const outputHTMLFilePath = `${distDir}/${indexHTMLFileName}`;
-const indexJSFileName = 'index.js';
-const indexCSSFileName = 'index.css';
-const routerJSFileName = 'router.js';
+import fs from 'fs';
+import http from 'http';
+import zlib from 'zlib';
+import { exec } from 'child_process';
+import serveStatic from 'serve-static';
+import finalhandler from 'finalhandler';
+import murmurhash from 'murmurhash';
+import path from 'path';
+import {
+  assetsInputDir,
+  assetsOutputDir,
+  distDir,
+  greenOutput,
+  indexCSSFileName,
+  indexJSFileName,
+  inputHTMLFilePath,
+  isProd,
+  outputHTMLFilePath,
+  routerJSFileName,
+  serve,
+  yellowOutput,
+} from '../shared-config';
 
 let hashedIndexJSFileName = '';
 let hashedIndexCSSFileName = '';
@@ -38,12 +30,32 @@ let totalBundleSizeInBytes = 0;
 const serverPort = 4200;
 const hotReloadListener = "<script>new EventSource('/hot-reload').onmessage = (event) => location.reload();</script>";
 let serverStarted = false;
-let clients = [];
+let clients: { id: number; res: http.ServerResponse }[] = [];
 
+export const customHashingPlugin: { name: string; setup: (build: any) => void } = {
+  name: 'custom-hashing-plugin',
+  setup(build) {
+    build.onEnd((result: { outputFiles?: { path: string; contents: Buffer }[] }) => {
+      totalBundleSizeInBytes = 0;
+      initDistDirectory();
+
+      if (isProd) {
+        recursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
+      } else {
+        watchAndRecursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
+      }
+
+      if (result.outputFiles && result.outputFiles.length > 0) {
+        processAllFiles(result.outputFiles);
+        copyIndexHTMLIntoDistAndStartServer();
+      }
+    });
+  },
+};
 
 // HASHING FUNCTIONS ------------------------------------------------------------------------------------------------------------------------------
-const writeHashedFileToDistFolder = (file, hashedFileName) => {
-  if (isProd && serve === 'serve') {
+const writeHashedFileToDistFolder = (file: { contents: Buffer }, hashedFileName: string): void => {
+  if (isProd && serve) {
     zlib.gzip(file.contents, { level: zlib.constants.Z_BEST_COMPRESSION }, (err, buffer) => {
       if (err) {
         console.error('Error gzipping file:', err);
@@ -57,7 +69,7 @@ const writeHashedFileToDistFolder = (file, hashedFileName) => {
   }
 };
 
-const writeFile = (fileName, fileData, gzipped) => {
+const writeFile = (fileName: string, fileData: Buffer, gzipped: boolean): void => {
   logFileNameAndSize(fileName, fileData);
 
   fs.writeFile(`${distDir}/${fileName}${gzipped ? '.gz' : ''}`, fileData, 'utf8', (writeErr) => {
@@ -65,18 +77,18 @@ const writeFile = (fileName, fileData, gzipped) => {
   });
 };
 
-const logFileNameAndSize = (fileName, fileData) => {
+const logFileNameAndSize = (fileName: string, fileData: Buffer): void => {
   const sizeInBytes = Buffer.byteLength(fileData, 'utf8');
   totalBundleSizeInBytes += sizeInBytes;
   const sizeInKilobytes = sizeInBytes / 1024;
   console.info(fileName, greenOutput, ` Size: ${sizeInKilobytes.toFixed(2)} KB`);
 };
 
-const generateQuickHash = (fileData) => {
-  return murmurhash.v3(fileData, 64).toString(16);
+const generateQuickHash = (fileData: Buffer): string => {
+  return murmurhash.v3(fileData.toString(), 64).toString(16);
 };
 
-const hashEntryPointFileName = (file) => {
+const hashEntryPointFileName = (file: { path: string; contents: Buffer }): string => {
   const fileName = path.basename(file.path);
   const fileNameWithoutExtension = fileName.slice(0, fileName.lastIndexOf('.'));
   const fileNameExtension = fileName.slice(fileName.lastIndexOf('.'));
@@ -85,48 +97,39 @@ const hashEntryPointFileName = (file) => {
 };
 
 // File processing functions ------------------------------------------------------------------------------------------------------------------------
-const processAllFiles = (files) => {
+const processAllFiles = (files: { path: string; contents: Buffer }[]): void => {
   for (const file of files) {
     if (!file.path.includes('.css') || file.path.includes(indexCSSFileName)) {
       switch (true) {
         case file.path.includes(indexJSFileName):
-          {
-            hashedIndexJSFileName = hashEntryPointFileName(file);
-            writeHashedFileToDistFolder(file, hashedIndexJSFileName);
-          }
+          hashedIndexJSFileName = hashEntryPointFileName(file);
+          writeHashedFileToDistFolder(file, hashedIndexJSFileName);
           break;
         case file.path.includes(indexCSSFileName):
-          {
-            hashedIndexCSSFileName = hashEntryPointFileName(file);
-            writeHashedFileToDistFolder(file, hashedIndexCSSFileName);
-          }
+          hashedIndexCSSFileName = hashEntryPointFileName(file);
+          writeHashedFileToDistFolder(file, hashedIndexCSSFileName);
           break;
         case file.path.includes(routerJSFileName):
-          {
-            hashedRouterJSFileName = hashEntryPointFileName(file);
-            writeHashedFileToDistFolder(file, hashedRouterJSFileName);
-          }
+          hashedRouterJSFileName = hashEntryPointFileName(file);
+          writeHashedFileToDistFolder(file, hashedRouterJSFileName);
           break;
-        default: {
+        default:
           const fileNameWithHash = path.basename(file.path);
           writeHashedFileToDistFolder(file, fileNameWithHash);
-        }
       }
     }
   }
 };
 
-
-
 // DIRECTORY MANIPULATION FUNCTIONS -----------------------------------------------------------------------------------------------------------------
-const initDistDirectory = () => {
+const initDistDirectory = (): void => {
   if (fs.existsSync(distDir)) {
     fs.rmSync(distDir, { recursive: true });
   }
   fs.mkdirSync(distDir, { recursive: true });
 };
 
-const copyIndexHTMLIntoDistAndStartServer = () => {
+const copyIndexHTMLIntoDistAndStartServer = (): void => {
   const indexCSSFilePlaceholderText = 'INDEX_CSS_FILE_PLACEHOLDER';
   const indexJSFilePlaceholderText = 'INDEX_JS_FILE_PLACEHOLDER';
   const routerJSFilePlaceholderText = 'ROUTER_JS_FILE_PLACEHOLDER';
@@ -142,9 +145,10 @@ const copyIndexHTMLIntoDistAndStartServer = () => {
       .replace(hotReloadPlaceHolderText, serve === 'serve' ? hotReloadListener : '');
 
     fs.writeFile(outputHTMLFilePath, updatedData, 'utf8', (writeErr) => {
+      if (writeErr) throw writeErr;
+
       const sizeInBytes = Buffer.byteLength(updatedData, 'utf8');
       const sizeInKilobytes = sizeInBytes / 1024;
-
       totalBundleSizeInBytes += sizeInBytes;
       const totalSizeInKilobytes = totalBundleSizeInBytes / 1024;
 
@@ -155,14 +159,12 @@ const copyIndexHTMLIntoDistAndStartServer = () => {
       if (serve) {
         serverStarted ? sendReloadMessage() : startServer();
       }
-
-      if (writeErr) throw writeErr;
     });
   });
 };
 
 // SERVER FUNCTIONS ------------------------------------------------------------------------------------------------------------------------------
-const startServer = () => {
+const startServer = (): void => {
   const server = http.createServer();
   const url = `http://localhost:${serverPort}/`;
   setupSSE(server);
@@ -175,7 +177,7 @@ const startServer = () => {
   });
 };
 
-const openLocalhostInBrowser = (url) => {
+const openLocalhostInBrowser = (url: string): void => {
   switch (process.platform) {
     case 'darwin': // macOS
       exec(`open ${url}`);
@@ -192,16 +194,16 @@ const openLocalhostInBrowser = (url) => {
   }
 };
 
-const setupSSE = (server) => {
+const setupSSE = (server: http.Server): void => {
   const app = serveStatic(distDir, { index: ['index.html'] });
   server.on('request', (req, res) => {
     if (req.url === '/hot-reload') {
       handleSSEConnection(req, res);
     } else {
-      const gzippedFilePath = path.join(distDir, req.url) + '.gz';
+      const gzippedFilePath = path.join(distDir, req.url || '') + '.gz';
       if (fs.existsSync(gzippedFilePath)) {
         res.setHeader('Content-Encoding', 'gzip');
-        res.setHeader('Content-Type', getContentType(req.url));
+        res.setHeader('Content-Type', getContentType(req.url || ''));
         fs.createReadStream(gzippedFilePath).pipe(res);
       } else {
         app(req, res, finalhandler(req, res));
@@ -210,8 +212,7 @@ const setupSSE = (server) => {
   });
 };
 
-const getContentType = (url) => {
-  // Add more cases as needed
+const getContentType = (url: string): string => {
   switch (path.extname(url)) {
     case '.js':
       return 'text/javascript';
@@ -222,32 +223,27 @@ const getContentType = (url) => {
     default:
       return 'text/plain';
   }
-}
+};
 
-const handleSSEConnection = (req, res) => {
+const handleSSEConnection = (req: http.IncomingMessage, res: http.ServerResponse): void => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
   const clientId = Date.now();
-  const newClient = {
-    id: clientId,
-    res,
-  };
-  clients.push(newClient);
+  clients.push({ id: clientId, res });
 
   req.on('close', () => {
     clients = clients.filter((client) => client.id !== clientId);
   });
 };
 
-const sendReloadMessage = () => {
+const sendReloadMessage = (): void => {
   clients.forEach((client) => client.res.write(`data: ${new Date().toLocaleTimeString()}\n\n`));
 };
 
-
-const recursivelyCopyAssetsIntoDist = (src, dest) => {
+const recursivelyCopyAssetsIntoDist = (src: string, dest: string): void => {
   fs.mkdirSync(dest, { recursive: true });
 
   const entries = fs.readdirSync(src, { withFileTypes: true });
@@ -264,7 +260,7 @@ const recursivelyCopyAssetsIntoDist = (src, dest) => {
   }
 };
 
-const watchAndRecursivelyCopyAssetsIntoDist = (src, dest) => {
+const watchAndRecursivelyCopyAssetsIntoDist = (src: string, dest: string): void => {
   recursivelyCopyAssetsIntoDist(src, dest);
 
   fs.watch(src, { recursive: true }, (eventType, filename) => {
@@ -294,27 +290,3 @@ const watchAndRecursivelyCopyAssetsIntoDist = (src, dest) => {
     }
   });
 };
-
-
-const customHashingPlugin = {
-  name: 'custom-hashing-plugin',
-  setup(build) {
-    build.onEnd((result) => {
-      totalBundleSizeInBytes = 0;
-      initDistDirectory();
-
-      if (isProd) {
-        recursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
-      } else {
-        watchAndRecursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
-      }
-
-      if (result.outputFiles && result.outputFiles.length > 0) {
-        processAllFiles(result.outputFiles);
-        copyIndexHTMLIntoDistAndStartServer();
-      }
-    });
-  },
-};
-
-module.exports = customHashingPlugin;

@@ -10240,7 +10240,7 @@ export default registerComponent(
     };
 
     styles = () => {
-      return ` <style></style> `;
+      return ` <style></style>`;
     };
   },
 );

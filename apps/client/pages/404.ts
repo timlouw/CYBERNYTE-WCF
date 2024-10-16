@@ -1,7 +1,7 @@
 import { Component, registerComponent } from '@services';
 
 export default registerComponent(
-  { name: 'ui-404-page', clickDetection: true, fullHeight: true },
+  { name: 'ui-404-page', clickDetection: true },
   class extends Component {
     render = () => {
       return html`

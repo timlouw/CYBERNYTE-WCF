@@ -1,21 +1,25 @@
 {
   "scripts": {
-    "start": "node scripts/build-frontend.js dev client serve",
-    "start-prod": "node scripts/build-frontend.js prod client serve",
-    "build": "node scripts/build-frontend.js prod client",
-    "start-admin": "node scripts/build-frontend.js dev admin serve",
-    "start-admin-prod": "node scripts/build-frontend.js prod admin serve",
-    "build-admin": "node scripts/build-frontend.js prod admin",
+    "start": "ts-node scripts/build.ts dev client serve",
+    "start-prod": "ts-node scripts/build.ts prod client serve",
+    "build": "ts-node scripts/build.ts prod client",
+    "start-admin": "ts-node scripts/build.ts dev admin serve",
+    "start-admin-prod": "ts-node scripts/build.ts prod admin serve",
+    "build-admin": "ts-node scripts/build.ts prod admin",
     "format": "prettier --write \"**/*.{ts,json,html}\"",
     "prepare": "husky install"
   },
   "devDependencies": {
+    "@types/finalhandler": "^1.2.3",
+    "@types/node": "^22.7.5",
+    "@types/serve-static": "^1.15.7",
     "esbuild": "^0.19.4",
     "finalhandler": "^1.2.0",
     "husky": "^8.0.3",
     "murmurhash": "^2.0.1",
     "prettier": "3.0.3",
     "serve-static": "^1.15.0",
+    "ts-node": "^10.9.2",
     "typescript": "5.3.3"
   }
 }
