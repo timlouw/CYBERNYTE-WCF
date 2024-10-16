@@ -76,15 +76,15 @@ export const customElementUniqueIdGeneratorPlugin: Plugin = {
         const bindListenersFunction = `
           bindClickListeners = () => {
             ${clickListeners
-            .map((listener, counter) => {
-              return `
+              .map((listener, counter) => {
+                return `
                 const element${counter} = this.shadowRoot.querySelector(\`[click-id="${listener.clickId}"]\`);
                 if (element${counter}) {
                   element${counter}.addEventListener('click', ${listener.handler});
                 }
               `.trim();
-            })
-            .join('\n')}
+              })
+              .join('\n')}
           };
         `;
 
@@ -111,16 +111,10 @@ export const customElementUniqueIdGeneratorPlugin: Plugin = {
       }
 
       // Example usage
-      const sourceFile = createSourceFile(
-        args.path,
-        source,
-        ScriptTarget.ESNext,
-        true,
-        ScriptKind.TS
-      );
+      const sourceFile = createSourceFile(args.path, source, ScriptTarget.ESNext, true, ScriptKind.TS);
 
       const identifierCache = getIdentifiersCache(sourceFile);
-      const targetIdentifier = "registerComponent"; // replace with the identifier you're looking for
+      const targetIdentifier = 'registerComponent'; // replace with the identifier you're looking for
 
       if (identifierCache.has(targetIdentifier)) {
         console.log(`Identifier "${targetIdentifier}" found.`);
