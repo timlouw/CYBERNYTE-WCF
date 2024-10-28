@@ -23,8 +23,6 @@ export default registerComponent(
       `;
     };
 
-    styles = () => {
-      return css``;
-    };
+    static styles = css``;
   },
 );

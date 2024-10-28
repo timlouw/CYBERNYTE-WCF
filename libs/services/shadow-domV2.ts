@@ -7,17 +7,19 @@ interface CreateComponentConfig {
 
 interface InputComponent {
   new (...params: any[]): HTMLElement;
+  styles: string;
 }
 
 export abstract class Component extends HTMLElement {
+  static styles: string;
   abstract render: () => string;
-  abstract styles: () => string;
   abstract initializeBindings: () => void;
 }
 
-const stylesMap = new Map<string, CSSStyleSheet>();
-
 export const registerComponent = (config: CreateComponentConfig, component: InputComponent): string => {
+  const styleSheet = new CSSStyleSheet();
+  styleSheet.replaceSync(component.styles);
+
   window.customElements.define(
     config.name,
     class extends component {
@@ -29,13 +31,6 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
       createComponent() {
         this.attachShadow({ mode: 'open' });
         if (this.shadowRoot) {
-          let styleSheet = stylesMap.get(config.name) as CSSStyleSheet;
-          if (!styleSheet) {
-            styleSheet = new CSSStyleSheet();
-            styleSheet.replaceSync(this.styles());
-            stylesMap.set(config.name, styleSheet);
-          }
-
           this.shadowRoot.adoptedStyleSheets = [styleSheet];
           this.shadowRoot.innerHTML = this.render();
           this.initializeBindings();
@@ -44,10 +39,6 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
 
       render() {
         return html``;
-      }
-
-      styles() {
-        return css``;
       }
 
       initializeBindings() {}

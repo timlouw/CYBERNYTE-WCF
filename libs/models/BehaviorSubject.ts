@@ -8,7 +8,7 @@ export class BehaviorSubject<T> {
 
   subscribe(newObserver: (currentValue: any) => void) {
     this.observer = newObserver;
-    newObserver(this.currentValue);
+    // this.observer(this.currentValue);
   }
 
   next(newValue: any) {
@@ -17,7 +17,9 @@ export class BehaviorSubject<T> {
     }
 
     this.currentValue = newValue;
-    this.observer(this.currentValue);
+    if (this.observer && typeof this.observer === 'function') {
+      this.observer(this.currentValue);
+    }
   }
 
   getValue(): T | null {
