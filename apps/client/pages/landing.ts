@@ -4,7 +4,7 @@ export default registerComponent(
   { name: 'ui-landing-page' },
   class extends Component {
     render = () => {
-      return /*html*/`
+      return html`
         HELLO
         <my-element color="red"></my-element>
         <my-element color="red"></my-element>
@@ -10240,7 +10240,7 @@ export default registerComponent(
     };
 
     styles = () => {
-      return /*html*/``;
+      return css``;
     };
   },
 );

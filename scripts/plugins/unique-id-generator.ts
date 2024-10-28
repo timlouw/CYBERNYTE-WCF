@@ -1,6 +1,5 @@
 import fs from 'fs';
 import { Plugin } from 'esbuild';
-// import { isIdentifier, forEachChild, createSourceFile, ScriptTarget, SourceFile, ScriptKind, Node } from 'typescript';
 
 const generateRandomId = (): string => {
   return `id-${Math.random().toString(36).substring(2, 15)}`;
@@ -30,7 +29,7 @@ export const customElementUniqueIdGeneratorPlugin: Plugin = {
         return `${match}\n  uniqueID = this.getAttribute('data-id');\n`;
       });
 
-      // Step 3: Modify HTML inside template literals and process custom elements and @click events
+      // Step 3: Modify HTML inside template literals and process custom elements
       const templateLiteralRegex = /html`([\s\S]*?)`/g;
       let templateMatch: RegExpExecArray | null;
 
@@ -50,35 +49,22 @@ export const customElementUniqueIdGeneratorPlugin: Plugin = {
         });
 
         // Replace the original template literal in the source code with the modified one
-        modifiedSource = modifiedSource.replace(templateMatch[1], templateContent);
+        const fullMatch = templateMatch[0]; // This includes "html`...`"
+        const modifiedTemplateLiteral = `\`${templateContent}\``;
+        modifiedSource = modifiedSource.replace(fullMatch, modifiedTemplateLiteral);
       }
 
-      // // Cache identifiers in a Set to avoid repeated traversals
-      // function getIdentifiersCache(sourceFile: SourceFile): Set<string> {
-      //   const identifierCache = new Set<string>();
+      const cssLiteralRegex = /css`([\s\S]*?)`/g;
+      let cssMatch: RegExpExecArray | null;
 
-      //   function visit(node: Node) {
-      //     if (isIdentifier(node)) {
-      //       identifierCache.add(node.text);
-      //     }
-      //     forEachChild(node, visit);
-      //   }
+      while ((cssMatch = cssLiteralRegex.exec(modifiedSource)) !== null) {
+        let cssContent = cssMatch[1];
 
-      //   visit(sourceFile);
-      //   return identifierCache;
-      // }
-
-      // // Example usage
-      // const sourceFile = createSourceFile(args.path, source, ScriptTarget.ESNext, true, ScriptKind.TS);
-
-      // const identifierCache = getIdentifiersCache(sourceFile);
-      // const targetIdentifier = 'registerComponent'; // replace with the identifier you're looking for
-
-      // if (identifierCache.has(targetIdentifier)) {
-      //   console.log(`Identifier "${targetIdentifier}" found.`);
-      // } else {
-      //   console.log(`Identifier "${targetIdentifier}" not found.`);
-      // }
+        // Replace the original css literal in the source code with the modified one
+        const fullMatch = cssMatch[0]; // This includes "css`...`"
+        const modifiedTemplateLiteral = `\`${cssContent}\``;
+        modifiedSource = modifiedSource.replace(fullMatch, modifiedTemplateLiteral);
+      }
 
       return {
         contents: modifiedSource,

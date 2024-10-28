@@ -26,29 +26,27 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
         this.createComponent();
       }
 
-      async createComponent() {
+      createComponent() {
         this.attachShadow({ mode: 'open' });
         if (this.shadowRoot) {
-          const styleSheet = stylesMap.get(config.name) as CSSStyleSheet;
-          if (styleSheet) {
-            this.shadowRoot.adoptedStyleSheets = [styleSheet];
-          } else {
-            const styleSheet = new CSSStyleSheet();
+          let styleSheet = stylesMap.get(config.name) as CSSStyleSheet;
+          if (!styleSheet) {
+            styleSheet = new CSSStyleSheet();
             styleSheet.replaceSync(this.styles());
-            this.shadowRoot.adoptedStyleSheets = [styleSheet];
             stylesMap.set(config.name, styleSheet);
           }
 
+          this.shadowRoot.adoptedStyleSheets = [styleSheet];
           this.shadowRoot.innerHTML = this.render();
         }
       }
 
       render() {
-        return /*html*/``;
+        return html``;
       }
 
       styles() {
-        return /*html*/``;
+        return css``;
       }
     },
   );
