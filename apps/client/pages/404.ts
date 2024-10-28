@@ -22,7 +22,7 @@ export default registerComponent(
     };
 
     styles = () => {
-      return html` <style></style> `;
+      return html``;
     };
   },
 );
