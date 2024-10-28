@@ -3,7 +3,6 @@ type ValidComponentName = `${LowercaseString}-${LowercaseString}`;
 
 interface CreateComponentConfig {
   name: ValidComponentName;
-  clickDetection?: boolean;
 }
 
 interface InputComponent {
@@ -13,6 +12,7 @@ interface InputComponent {
 export abstract class Component extends HTMLElement {
   abstract render: () => string;
   abstract styles: () => string;
+  abstract initializeBindings: () => void;
 }
 
 const stylesMap = new Map<string, CSSStyleSheet>();
@@ -38,6 +38,7 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
 
           this.shadowRoot.adoptedStyleSheets = [styleSheet];
           this.shadowRoot.innerHTML = this.render();
+          this.initializeBindings();
         }
       }
 
@@ -48,7 +49,25 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
       styles() {
         return css``;
       }
+
+      initializeBindings() {}
     },
   );
   return config.name;
 };
+
+
+
+export const bindReactiveProperty = (shadowRoot: any, reactiveVar: any, selector: any, propertyType: any, property?: any) => {
+  const element = shadowRoot.querySelector(selector);
+
+  reactiveVar.subscribe((newValue: any) => {
+    if (propertyType === 'style') {
+      element.style[property] = newValue;
+    } else if (propertyType === 'attribute') {
+      element.setAttribute(property, newValue);
+    } else if (propertyType === 'innerText') {
+      element[propertyType] = newValue;
+    }
+  });
+}

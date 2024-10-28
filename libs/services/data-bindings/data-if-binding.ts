@@ -17,7 +17,7 @@ export const getIfBinding = (name: string) => {
 export const setIfBinding = (name: string, value: boolean) => {
   globalIfSubjects[name] = {
     value: new BehaviorSubject(value),
-    element: new BehaviorSubject(null),
+    element: new BehaviorSubject(null) as any,
     subscribed: false,
   };
 

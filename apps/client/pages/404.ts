@@ -1,8 +1,10 @@
 import { Component, registerComponent } from '@services';
 
 export default registerComponent(
-  { name: 'ui-404-page', clickDetection: true },
+  { name: 'ui-404-page' },
   class extends Component {
+    initializeBindings = () => {};
+
     render = () => {
       return html`
         <div class="testContainer" style="text-align: center">

@@ -1,19 +1,14 @@
 export class BehaviorSubject<T> {
   private currentValue: T | null;
-  private observers: any[];
+  private observer: any;
 
-  constructor(firstValue: any) {
+  constructor(firstValue: T) {
     this.currentValue = firstValue;
-    this.observers = [];
   }
 
-  subscribe(observer: (currentValue: any) => void) {
-    this.observers.push(observer);
-    observer(this.currentValue);
-  }
-
-  unsubscribeAll() {
-    this.observers.length = 0;
+  subscribe(newObserver: (currentValue: any) => void) {
+    this.observer = newObserver;
+    newObserver(this.currentValue);
   }
 
   next(newValue: any) {
@@ -22,7 +17,7 @@ export class BehaviorSubject<T> {
     }
 
     this.currentValue = newValue;
-    this.observers?.forEach((observer) => observer(this.currentValue));
+    this.observer(this.currentValue);
   }
 
   getValue(): T | null {
@@ -30,7 +25,7 @@ export class BehaviorSubject<T> {
   }
 
   destroy() {
-    this.observers.length = 0;
+    this.observer = null;
     this.currentValue = null;
   }
 }
