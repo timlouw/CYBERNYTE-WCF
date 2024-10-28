@@ -6,7 +6,7 @@ export default registerComponent(
     color = this.getAttribute('color');
 
     render = () => {
-      const asd = html`
+      const asd = /*html*/`
         <div class="box" style="background-color: ${this.color}"></div>
         <div class="box2" @click="${(event: MouseEvent) => this.boxClick(event)}"></div>
       `;
@@ -20,7 +20,7 @@ export default registerComponent(
     }
 
     styles = () => {
-      return html`
+      return /*html*/`
           .box {
             width: 100%;
             height: 20px;

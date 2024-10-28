@@ -4,7 +4,7 @@ export default registerComponent(
   { name: 'ui-404-page', clickDetection: true },
   class extends Component {
     render = () => {
-      return html`
+      return /*html*/`
         <div class="testContainer" style="text-align: center">
           <h1>404</h1>
           <h1>Not Found</h1>
@@ -22,7 +22,7 @@ export default registerComponent(
     };
 
     styles = () => {
-      return html``;
+      return /*html*/``;
     };
   },
 );

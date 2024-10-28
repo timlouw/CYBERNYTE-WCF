@@ -44,10 +44,11 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
       }
 
       render() {
-        return html``;
+        return /*html*/``;
       }
+
       styles() {
-        return '';
+        return /*html*/``;
       }
     },
   );

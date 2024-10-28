@@ -82,7 +82,7 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
       }
 
       render() {
-        return html``;
+        return ``;
       }
       styles() {
         return '';
