@@ -3,10 +3,7 @@ import { Component, registerComponent } from '@services';
 export default registerComponent(
   { name: 'ui-landing-page' },
   class extends Component {
-
-    initializeBindings = () => {
-
-    }
+    initializeBindings = () => {};
 
     render = () => {
       return html`

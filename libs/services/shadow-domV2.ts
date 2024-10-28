@@ -56,8 +56,6 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
   return config.name;
 };
 
-
-
 export const bindReactiveProperty = (shadowRoot: any, reactiveVar: any, selector: any, propertyType: any, property?: any) => {
   const element = shadowRoot.querySelector(selector);
 
@@ -70,4 +68,4 @@ export const bindReactiveProperty = (shadowRoot: any, reactiveVar: any, selector
       element[propertyType] = newValue;
     }
   });
-}
+};

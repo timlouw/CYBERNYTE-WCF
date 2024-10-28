@@ -10,7 +10,7 @@ export default registerComponent(
     initializeBindings = () => {
       bindReactiveProperty(this.shadowRoot, this.reactiveColor, '.box', 'style', 'background-color');
       bindReactiveProperty(this.shadowRoot, this.reactiveText, '.box2', 'innerText');
-    }
+    };
 
     render = () => {
       return html`
