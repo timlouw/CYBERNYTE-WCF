@@ -34,12 +34,7 @@ const injectNewRoute = () => {
   newRoute
     .componentModule()
     .then((module: any) => {
-      const componentName = module.default;
-
-      routerOutlet.innerHTML = `
-      <${componentName}></${componentName}>
-    `;
-
+      routerOutlet.innerHTML = module.default;
       routerOutlet.scrollTo({ top: 0, behavior: 'smooth' });
     })
     .catch((error: any) => {

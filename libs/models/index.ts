@@ -1,1 +1,1 @@
-export * from './BehaviorSubject';
+export * from './signal';

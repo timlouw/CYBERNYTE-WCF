@@ -1,8 +1,9 @@
 type LowercaseString = `${Lowercase<string>}`;
-type ValidComponentName = `${LowercaseString}-${LowercaseString}`;
+type ValidComponentSelector = `${LowercaseString}-${LowercaseString}`;
 
 interface CreateComponentConfig {
-  name: ValidComponentName;
+  selector: ValidComponentSelector;
+  type: 'page' | 'component';
 }
 
 interface InputComponent {
@@ -10,18 +11,41 @@ interface InputComponent {
   styles: string;
 }
 
+type ComponentProps = Record<string, any>;
+type ComponentHTMLSelector<T> = (props: T) => string;
+type PageHTMLSelector = `<${ValidComponentSelector}></${ValidComponentSelector}>`;
+
 export abstract class Component extends HTMLElement {
   static styles: string;
   abstract render: () => string;
   abstract initializeBindings: () => void;
 }
 
-export const registerComponent = (config: CreateComponentConfig, component: InputComponent): string => {
+// Overloaded function declarations for `registerComponent`
+
+// For 'component' type, return a callable function that accepts props
+export function registerComponent<T extends ComponentProps>(
+  config: CreateComponentConfig & { type: 'component' },
+  component: InputComponent
+): ComponentHTMLSelector<T>;
+
+// For 'page' type, return a simple HTML template string
+export function registerComponent(
+  config: CreateComponentConfig & { type: 'page' },
+  component: InputComponent
+): PageHTMLSelector;
+
+// Single function implementation to handle both cases
+export function registerComponent<T extends ComponentProps>(
+  config: CreateComponentConfig,
+  component: InputComponent
+): ComponentHTMLSelector<T> | PageHTMLSelector {
+
   const styleSheet = new CSSStyleSheet();
   styleSheet.replaceSync(component.styles);
 
   window.customElements.define(
-    config.name,
+    config.selector,
     class extends component {
       constructor() {
         super();
@@ -42,11 +66,22 @@ export const registerComponent = (config: CreateComponentConfig, component: Inpu
       }
 
       initializeBindings() {}
-    },
+    }
   );
-  return config.name;
+
+  // Conditional return type based on `config.type`
+  if (config.type === 'page') {
+    return `<${config.selector}></${config.selector}>` as PageHTMLSelector;
+  } else {
+    return ((props: T) => `
+      <${config.selector}
+        ${Object.entries(props).map(([key, value]) => `${key}="${value}"`).join(' ')}>
+      </${config.selector}>`) as ComponentHTMLSelector<T>;
+  }
 };
 
+
+// Bind Reactive Properties
 export const bindReactiveProperty = (shadowRoot: any, reactiveVar: any, selector: any, propertyType: any, property?: any) => {
   const element = shadowRoot.querySelector(selector);
 

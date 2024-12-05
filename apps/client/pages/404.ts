@@ -1,7 +1,7 @@
 import { Component, registerComponent } from '@services';
 
 export default registerComponent(
-  { name: 'ui-404-page' },
+  { selector: 'ui-404-page', type: 'page' },
   class extends Component {
     initializeBindings = () => {};
 

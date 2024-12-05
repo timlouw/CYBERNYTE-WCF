@@ -1,26 +1,30 @@
-import { BehaviorSubject } from '@models';
+import { signal } from '@models';
 import { bindReactiveProperty, Component, registerComponent } from '@services';
 
-export default registerComponent(
-  { name: 'my-element' },
+interface MyElementProps {
+  color: string;
+}
+
+export const MyElementComponent = registerComponent<MyElementProps>(
+  { selector: 'my-element', type: 'component' },
   class extends Component {
-    color = new BehaviorSubject(this.getAttribute('color'));
-    reactiveText = new BehaviorSubject('asdasd');
+    color = signal(this.getAttribute('color'));
+    text = signal('asdfs');
 
     initializeBindings = () => {
       bindReactiveProperty(this.shadowRoot, this.color, '.box', 'style', 'background-color');
-      bindReactiveProperty(this.shadowRoot, this.reactiveText, '.box2', 'innerText');
+      bindReactiveProperty(this.shadowRoot, this.text, '.box2', 'innerText');
+
+      setTimeout(() => {
+        this.color('green')
+        this.text('green')
+      }, 0);
     };
 
     render = () => {
-      setInterval(() => {
-        this.color.next(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
-        this.reactiveText.next(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
-      }, 3000);
-
       return html`
-        <div class="box" style="background-color: ${this.color.getValue()}"></div>
-        <div class="box2">${this.reactiveText.getValue()}</div>
+        <div class="box" style="background-color: ${this.color()}"></div>
+        <div class="box2">${this.text()}</div>
       `;
     };
 
