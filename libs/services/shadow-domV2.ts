@@ -24,23 +24,13 @@ export abstract class Component extends HTMLElement {
 // Overloaded function declarations for `registerComponent`
 
 // For 'component' type, return a callable function that accepts props
-export function registerComponent<T extends ComponentProps>(
-  config: CreateComponentConfig & { type: 'component' },
-  component: InputComponent
-): ComponentHTMLSelector<T>;
+export function registerComponent<T extends ComponentProps>(config: CreateComponentConfig & { type: 'component' }, component: InputComponent): ComponentHTMLSelector<T>;
 
 // For 'page' type, return a simple HTML template string
-export function registerComponent(
-  config: CreateComponentConfig & { type: 'page' },
-  component: InputComponent
-): PageHTMLSelector;
+export function registerComponent(config: CreateComponentConfig & { type: 'page' }, component: InputComponent): PageHTMLSelector;
 
 // Single function implementation to handle both cases
-export function registerComponent<T extends ComponentProps>(
-  config: CreateComponentConfig,
-  component: InputComponent
-): ComponentHTMLSelector<T> | PageHTMLSelector {
-
+export function registerComponent<T extends ComponentProps>(config: CreateComponentConfig, component: InputComponent): ComponentHTMLSelector<T> | PageHTMLSelector {
   const styleSheet = new CSSStyleSheet();
   styleSheet.replaceSync(component.styles);
 
@@ -66,7 +56,7 @@ export function registerComponent<T extends ComponentProps>(
       }
 
       initializeBindings() {}
-    }
+    },
   );
 
   // Conditional return type based on `config.type`
@@ -75,11 +65,12 @@ export function registerComponent<T extends ComponentProps>(
   } else {
     return ((props: T) => `
       <${config.selector}
-        ${Object.entries(props).map(([key, value]) => `${key}="${value}"`).join(' ')}>
+        ${Object.entries(props)
+          .map(([key, value]) => `${key}="${value}"`)
+          .join(' ')}>
       </${config.selector}>`) as ComponentHTMLSelector<T>;
   }
-};
-
+}
 
 // Bind Reactive Properties
 export const bindReactiveProperty = (shadowRoot: any, reactiveVar: any, selector: any, propertyType: any, property?: any) => {

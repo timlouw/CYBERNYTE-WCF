@@ -16,8 +16,8 @@ export const MyElementComponent = registerComponent<MyElementProps>(
       bindReactiveProperty(this.shadowRoot, this.text, '.box2', 'innerText');
 
       setTimeout(() => {
-        this.color('green')
-        this.text('green')
+        this.color('green');
+        this.text('green');
       }, 0);
     };
 

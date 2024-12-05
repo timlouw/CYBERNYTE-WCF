@@ -14,7 +14,7 @@ export const signal = (initialValue: any) => {
       }
       return value;
     }
-  }
+  };
 
   // Add the subscribe method to the reactive function
   reactiveFunction.subscribe = (callback: any) => {
@@ -29,4 +29,4 @@ export const signal = (initialValue: any) => {
   };
 
   return reactiveFunction;
-}
+};
