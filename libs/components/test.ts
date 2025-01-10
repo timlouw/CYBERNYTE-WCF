@@ -8,8 +8,8 @@ interface MyElementProps {
 export const MyElementComponent = registerComponent<MyElementProps>(
   { selector: 'my-element', type: 'component' },
   class extends Component {
-      color = signal(this.getAttribute('color'));
-      text = signal('asdfs');
+    color = signal(this.getAttribute('color'));
+    text = signal('asdfs');
 
     initializeBindings = () => {
       bindReactiveProperty(this.shadowRoot, this.color, '.box', 'style', 'background-color');
