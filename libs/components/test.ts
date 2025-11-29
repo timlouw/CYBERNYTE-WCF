@@ -12,13 +12,29 @@ export const MyElementComponent = registerComponent<MyElementProps>(
     text = signal('asdfs');
 
     render = () => {
-      setInterval(() => {
+      const update = () => {
         this.color(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
         this.text(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
+      };
+
+      update();
+
+      setInterval(() => {
+        update();
       }, 3000);
 
       return html`
         <div class="box" style="background-color: ${this.color()}"></div>
+        <div class="box" style="background-color: ${this.color()}"></div>
+        <div class="box" style="background-color: ${this.color()}"></div>
+        <div class="box" style="background-color: ${this.color()}"></div>
+        <div class="box" style="background-color: ${this.color()}"></div>
+        <div class="box" style="background-color: ${this.color()}"></div>
+        <div class="box2">${this.text()}</div>
+        <div class="box2">${this.text()}</div>
+        <div class="box2">${this.text()}</div>
+        <div class="box2">${this.text()}</div>
+        <div class="box2">${this.text()}</div>
         <div class="box2">${this.text()}</div>
       `;
     };
