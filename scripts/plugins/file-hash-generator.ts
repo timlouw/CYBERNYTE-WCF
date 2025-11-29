@@ -153,6 +153,7 @@ const copyIndexHTMLIntoDistAndStartServer = (): void => {
       const totalSizeInKilobytes = totalBundleSizeInBytes / 1024;
 
       console.info('index.html', greenOutput, ` Size: ${sizeInKilobytes.toFixed(2)} KB`);
+      console.info(greenOutput, `=== TOTAL BUNDLE SIZE: ${totalBundleSizeInBytes.toFixed(2)} B ===`);
       console.info(greenOutput, `=== TOTAL BUNDLE SIZE: ${totalSizeInKilobytes.toFixed(2)} KB ===`);
       console.info('');
 

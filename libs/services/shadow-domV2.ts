@@ -18,7 +18,6 @@ type PageHTMLSelector = `<${ValidComponentSelector}></${ValidComponentSelector}>
 export abstract class Component extends HTMLElement {
   static styles: string;
   abstract render: () => string;
-  initializeBindings?: () => void;
 }
 
 // Overloaded function declarations for `registerComponent`
@@ -42,7 +41,11 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
         this.createComponent();
       }
 
-      createComponent() {
+      render(): string {
+        return html``;
+      }
+
+      private createComponent() {
         this.attachShadow({ mode: 'open' });
         if (this.shadowRoot) {
           this.shadowRoot.adoptedStyleSheets = [styleSheet];
@@ -53,11 +56,7 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
         }
       }
 
-      render() {
-        return html``;
-      }
-
-      initializeBindings() {}
+      private initializeBindings() {}
     },
   );
 
