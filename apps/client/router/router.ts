@@ -1,7 +1,7 @@
 // NB!!! NB!!! anything you want to export needs to be done with the window object
 // specifically for this file because of the dynamic imports and how esbuild bundles them
 
-import { ROUTES, ROUTE_NOT_FOUND, Route, RoutesKeys } from './routes';
+import { ROUTES, ROUTE_NOT_FOUND, Route, RoutesKeys } from './routes.js';
 
 const body = document.querySelector('body') as HTMLElement;
 const setupRouterOutlet = () => {

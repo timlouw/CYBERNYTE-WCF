@@ -1,12 +1,13 @@
 {
+  "type": "module",
   "scripts": {
-    "start": "ts-node scripts/build.ts dev client serve",
-    "start-prod": "ts-node scripts/build.ts prod client serve",
+    "start-prod": "node --loader ts-node/esm scripts/build.ts prod client serve",
     "build": "ts-node scripts/build.ts prod client",
     "start-admin": "ts-node scripts/build.ts dev admin serve",
     "start-admin-prod": "ts-node scripts/build.ts prod admin serve",
     "build-admin": "ts-node scripts/build.ts prod admin",
     "format": "prettier --write \"**/*.{ts,json,html}\"",
+    "format:check": "prettier --check \"**/*.{ts,json,html}\"",
     "prepare": "husky install"
   },
   "devDependencies": {

@@ -15,10 +15,10 @@ export const MyElementComponent = registerComponent<MyElementProps>(
       bindReactiveProperty(this.shadowRoot, this.color, '.box', 'style', 'background-color');
       bindReactiveProperty(this.shadowRoot, this.text, '.box2', 'innerText');
 
-      setTimeout(() => {
-        this.color('green');
-        this.text('green');
-      }, 0);
+      setInterval(() => {
+        this.color(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
+        this.text(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
+      }, 3000);
     };
 
     render = () => {

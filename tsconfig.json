@@ -5,7 +5,6 @@
     "moduleResolution": "NodeNext",
     "lib": ["ESNext", "DOM"],
     "outDir": "./dist",
-    "baseUrl": "./",
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -16,9 +15,9 @@
     "alwaysStrict": true,
     "noUnusedLocals": true,
     "paths": {
-      "@services": ["libs/services/index.ts"],
-      "@components": ["libs/components/index.ts"],
-      "@models": ["libs/models/index.ts"],
+      "@services": ["./libs/services/index.ts"],
+      "@components": ["./libs/components/index.ts"],
+      "@models": ["./libs/models/index.ts"],
     },
   }
 }

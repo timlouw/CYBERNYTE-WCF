@@ -1,6 +1,6 @@
 import { exec } from 'child_process';
 import { Plugin } from 'esbuild';
-import { blueOutput } from '../shared-config';
+import { blueOutput } from '../shared-config.js';
 
 let isTscRunning = false;
 

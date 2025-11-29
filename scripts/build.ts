@@ -1,8 +1,8 @@
 import { build, BuildOptions, context } from 'esbuild';
-import { customElementUniqueIdGeneratorPlugin } from './plugins/unique-id-generator';
-import { tscTypeCheckingPlugin } from './plugins/tsc-type-checker';
-import { customHashingPlugin } from './plugins/file-hash-generator';
-import { blueOutput, distDir, entryPoints, environment, isProd, serve } from './shared-config';
+import { customElementUniqueIdGeneratorPlugin } from './plugins/unique-id-generator.js';
+import { tscTypeCheckingPlugin } from './plugins/tsc-type-checker.js';
+import { customHashingPlugin } from './plugins/file-hash-generator.js';
+import { blueOutput, distDir, entryPoints, environment, isProd, serve } from './shared-config.js';
 
 // ESBUILD CONFIGS ---------------------------------------------------------------------------------------------------------------------------------
 const SharedConfig: BuildOptions = {
@@ -10,6 +10,7 @@ const SharedConfig: BuildOptions = {
   bundle: true,
   platform: 'browser',
   outdir: distDir,
+  treeShaking: true,
   logLevel: 'error',
   splitting: true,
   format: 'esm',

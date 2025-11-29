@@ -1,5 +1,5 @@
 import { Component, registerComponent } from '@services';
-import { MyElementComponent } from 'libs/components/test';
+import { MyElementComponent } from '@components';
 
 export default registerComponent(
   { selector: 'ui-landing-page', type: 'page' },
@@ -7,6 +7,8 @@ export default registerComponent(
     initializeBindings = () => {};
 
     render = () => {
+      console.log('rendering landing page');
+
       return html`
         HELLO ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
         ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}

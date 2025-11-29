@@ -76,13 +76,26 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
 export const bindReactiveProperty = (shadowRoot: any, reactiveVar: any, selector: any, propertyType: any, property?: any) => {
   const element = shadowRoot.querySelector(selector);
 
-  reactiveVar.subscribe((newValue: any) => {
-    if (propertyType === 'style') {
+// Determine the update function once, outside the subscribe
+  let updateElement: (newValue: any) => void;
+
+  if (propertyType === 'style') {
+    updateElement = (newValue: any) => {
       element.style[property] = newValue;
-    } else if (propertyType === 'attribute') {
+    };
+  } else if (propertyType === 'attribute') {
+    updateElement = (newValue: any) => {
       element.setAttribute(property, newValue);
-    } else if (propertyType === 'innerText') {
-      element[propertyType] = newValue;
-    }
-  });
+    };
+  } else if (propertyType === 'innerText') {
+    updateElement = (newValue: any) => {
+      element.innerText = newValue;
+    };
+  } else {
+    // Fallback or throw an error for unsupported types
+    updateElement = () => {};
+  }
+
+  // Subscribe just calls the pre-determined update function
+  reactiveVar.subscribe(updateElement);
 };

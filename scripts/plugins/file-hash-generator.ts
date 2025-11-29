@@ -19,7 +19,7 @@ import {
   routerJSFileName,
   serve,
   yellowOutput,
-} from '../shared-config';
+} from '../shared-config.js';
 
 let hashedIndexJSFileName = '';
 let hashedIndexCSSFileName = '';

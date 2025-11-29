@@ -1,4 +1,6 @@
-import { RoutesKeys } from 'apps/client/router/routes';
+import { RoutesKeys } from './apps/client/router/routes.ts';
+
+declare module '*.css';
 
 declare global {
   function html(...values: any): any;
