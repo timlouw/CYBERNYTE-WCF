@@ -74,46 +74,29 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
   }
 }
 
-/**
- * Compiler-generated activation function for reactive bindings.
- * This is called at runtime with pre-computed binding information from the compiler.
- *
- * @param shadowRoot - The shadow root of the component
- * @param reactiveVar - The reactive signal variable
- * @param selector - The CSS selector for the target element (uses data-reactive-id)
- * @param propertyType - The type of property to update ('style' | 'attribute' | 'innerText')
- * @param property - The specific property name (for style/attribute types)
- */
-export const __activateBinding = (
-  shadowRoot: ShadowRoot,
-  reactiveVar: { subscribe: (callback: (value: any) => void) => () => void },
-  selector: string,
-  propertyType: 'style' | 'attribute' | 'innerText',
-  property?: string,
-): void => {
-  const element = shadowRoot.querySelector(selector) as HTMLElement;
+/** Core binding function - finds element and subscribes to signal */
+const __bind = (root: ShadowRoot, signal: { subscribe: (cb: (v: any) => void) => void }, sel: string, update: (el: HTMLElement, v: any) => void): void => {
+  const el = root.querySelector(sel) as HTMLElement;
+  if (el) signal.subscribe((v) => update(el, v));
+};
 
-  if (!element) {
-    console.warn(`[ReactiveBinding] Element not found for selector: ${selector}`);
-    return;
-  }
+/** Bind signal to element style property */
+export const __bindStyle = (root: ShadowRoot, signal: { subscribe: (cb: (v: any) => void) => void }, sel: string, prop: string): void => {
+  __bind(root, signal, sel, (el, v) => {
+    (el.style as any)[prop] = v;
+  });
+};
 
-  // Pre-determine the update function based on property type
-  const updateElement: (newValue: any) => void =
-    propertyType === 'style' && property
-      ? (newValue) => {
-          element.style[property as any] = newValue;
-        }
-      : propertyType === 'attribute' && property
-      ? (newValue) => {
-          element.setAttribute(property, newValue);
-        }
-      : propertyType === 'innerText'
-      ? (newValue) => {
-          element.innerText = newValue;
-        }
-      : () => {};
+/** Bind signal to element attribute */
+export const __bindAttr = (root: ShadowRoot, signal: { subscribe: (cb: (v: any) => void) => void }, sel: string, attr: string): void => {
+  __bind(root, signal, sel, (el, v) => {
+    el.setAttribute(attr, v);
+  });
+};
 
-  // Subscribe to the reactive variable
-  reactiveVar.subscribe(updateElement);
+/** Bind signal to element textContent */
+export const __bindText = (root: ShadowRoot, signal: { subscribe: (cb: (v: any) => void) => void }, sel: string): void => {
+  __bind(root, signal, sel, (el, v) => {
+    el.textContent = v;
+  });
 };

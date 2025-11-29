@@ -96,15 +96,30 @@ const findReactiveExpressionsInRender = (sourceFile: ts.SourceFile): { expressio
 };
 
 /**
+ * Converts CSS property name to camelCase for direct style property access
+ * e.g., "background-color" -> "backgroundColor"
+ */
+const toCamelCase = (str: string): string => {
+  return str.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+};
+
+/**
  * Generates the compiled bindings code that will be injected
+ * Uses specialized binding functions - no runtime type checks
  */
 const generateBindingsCode = (bindings: ReactiveBinding[]): string => {
   if (bindings.length === 0) return '';
 
   const bindingCalls = bindings
     .map((binding) => {
-      const propertyArg = binding.property ? `, '${binding.property}'` : '';
-      return `    __activateBinding(this.shadowRoot, this.${binding.signalName}, '${binding.elementSelector}', '${binding.propertyType}'${propertyArg});`;
+      if (binding.propertyType === 'style') {
+        const prop = toCamelCase(binding.property!);
+        return `    __bindStyle(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}','${prop}');`;
+      } else if (binding.propertyType === 'attribute') {
+        return `    __bindAttr(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}','${binding.property}');`;
+      } else {
+        return `    __bindText(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}');`;
+      }
     })
     .join('\n');
 
@@ -272,15 +287,22 @@ export const reactiveBindingCompilerPlugin: Plugin = {
       // Generate the initializeBindings function with reactive bindings
       const bindingsCode = allBindings.length > 0 ? generateBindingsCode(allBindings) : '';
 
-      // Add the import for __activateBinding if we have bindings
+      // Add the imports for binding functions if we have bindings
       if (allBindings.length > 0) {
         const importRegex = /import\s*{([^}]+)}\s*from\s*['"]@services['"]/;
         const importMatch = importRegex.exec(modifiedSource);
 
         if (importMatch) {
           const existingImports = importMatch[1];
-          if (!existingImports.includes('__activateBinding')) {
-            modifiedSource = modifiedSource.replace(importMatch[0], `import {${existingImports}, __activateBinding } from '@services'`);
+          // Determine which binding functions are needed
+          const needsStyle = allBindings.some((b) => b.propertyType === 'style');
+          const needsAttr = allBindings.some((b) => b.propertyType === 'attribute');
+          const needsText = allBindings.some((b) => b.propertyType === 'innerText');
+
+          const bindImports = [needsStyle ? '__bindStyle' : '', needsAttr ? '__bindAttr' : '', needsText ? '__bindText' : ''].filter(Boolean).join(', ');
+
+          if (bindImports) {
+            modifiedSource = modifiedSource.replace(importMatch[0], `import {${existingImports}, ${bindImports} } from '@services'`);
           }
         }
       }
