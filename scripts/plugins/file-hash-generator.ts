@@ -207,7 +207,19 @@ const setupSSE = (server: http.Server): void => {
         res.setHeader('Content-Type', getContentType(req.url || ''));
         fs.createReadStream(gzippedFilePath).pipe(res);
       } else {
-        app(req, res, finalhandler(req, res));
+        // SPA fallback: serve index.html for routes that don't match static files
+        // This allows client-side router to handle the navigation
+        const requestedPath = path.join(distDir, req.url || '');
+        const hasFileExtension = path.extname(req.url || '').length > 0;
+
+        if (!hasFileExtension && !fs.existsSync(requestedPath)) {
+          // Route request - serve index.html and let client-side router handle it
+          const indexPath = path.join(distDir, 'index.html');
+          res.setHeader('Content-Type', 'text/html');
+          fs.createReadStream(indexPath).pipe(res);
+        } else {
+          app(req, res, finalhandler(req, res));
+        }
       }
     }
   });
