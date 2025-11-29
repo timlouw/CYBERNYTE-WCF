@@ -224,9 +224,10 @@ export const reactiveBindingCompilerPlugin: Plugin = {
                 context: propertyType,
               });
 
+              const elementId = `r${reactiveIdCounter}`;
               allBindings.push({
                 signalName,
-                elementSelector: `[data-reactive-id="${reactiveIdCounter}"]`,
+                elementSelector: elementId,
                 propertyType,
                 property,
               });
@@ -248,8 +249,8 @@ export const reactiveBindingCompilerPlugin: Plugin = {
             const nextCloseBracket = afterInsertion.indexOf('>');
             const tagContent = afterInsertion.substring(0, nextCloseBracket);
 
-            if (!tagContent.includes('data-reactive-id') && !processedPositions.has(insertion.position)) {
-              templateContent = beforeInsertion + ` data-reactive-id="${insertion.id}"` + afterInsertion;
+            if (!tagContent.includes(' id="r') && !processedPositions.has(insertion.position)) {
+              templateContent = beforeInsertion + ` id="r${insertion.id}"` + afterInsertion;
               processedPositions.add(insertion.position);
             }
           }

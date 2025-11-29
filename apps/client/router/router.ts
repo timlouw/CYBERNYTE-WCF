@@ -3,20 +3,10 @@
 
 import { ROUTES, ROUTE_NOT_FOUND, Route, RoutesKeys } from './routes.js';
 
-const body = document.querySelector('body') as HTMLElement;
-const setupRouterOutlet = () => {
-  body.innerHTML = `<div id="router-outlet"></div>`;
-};
-setupRouterOutlet();
-const routerOutlet = body.querySelector('#router-outlet') as HTMLElement;
-
+const routerOutlet = document.getElementById('body') as HTMLElement;
 let currentPath: RoutesKeys;
 let newRoute: Route;
 let routeParams: { [key: string]: any } = {};
-
-const handleLocation = async () => {
-  matchNewRoute();
-};
 
 const matchNewRoute = () => {
   currentPath = window.location.pathname as RoutesKeys;
@@ -93,16 +83,16 @@ window.navigate = (path: string) => {
   if (currentPath === path) return;
 
   window.history.pushState({}, '', path);
-  handleLocation();
+  matchNewRoute();
 };
 
 window.navigateBack = () => {
   window.history.back();
 };
 
-window.onpopstate = handleLocation;
+window.onpopstate = matchNewRoute;
 
-window.onload = handleLocation;
+window.onload = matchNewRoute;
 
 // NB!!! NB!!! anything you want to export needs to be done with the window object
 // specifically for this file because of the dynamic imports and how esbuild bundles them
