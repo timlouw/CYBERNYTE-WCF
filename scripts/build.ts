@@ -1,7 +1,7 @@
 import { build, BuildOptions, context } from 'esbuild';
-import { customElementUniqueIdGeneratorPlugin } from './plugins/unique-id-generator.js';
 import { tscTypeCheckingPlugin } from './plugins/tsc-type-checker.js';
 import { customHashingPlugin } from './plugins/file-hash-generator.js';
+import { reactiveBindingCompilerPlugin } from './plugins/reactive-binding-compiler.js';
 import { blueOutput, distDir, entryPoints, environment, isProd, serve } from './shared-config.js';
 
 // ESBUILD CONFIGS ---------------------------------------------------------------------------------------------------------------------------------
@@ -16,7 +16,7 @@ const SharedConfig: BuildOptions = {
   format: 'esm',
   sourcemap: false,
   write: false,
-  plugins: [tscTypeCheckingPlugin, customHashingPlugin, customElementUniqueIdGeneratorPlugin],
+  plugins: [tscTypeCheckingPlugin, customHashingPlugin, reactiveBindingCompilerPlugin],
 };
 
 const ProdConfig: BuildOptions = {

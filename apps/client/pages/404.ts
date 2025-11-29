@@ -3,8 +3,6 @@ import { Component, registerComponent } from '@services';
 export default registerComponent(
   { selector: 'ui-404-page', type: 'page' },
   class extends Component {
-    initializeBindings = () => {};
-
     render = () => {
       return html`
         <div class="testContainer" style="text-align: center">

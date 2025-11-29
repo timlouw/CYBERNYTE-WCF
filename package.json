@@ -2,7 +2,7 @@
   "type": "module",
   "scripts": {
     "start-prod": "node --loader ts-node/esm scripts/build.ts prod client serve",
-    "build": "ts-node scripts/build.ts prod client",
+    "build": "node --loader ts-node/esm scripts/build.ts prod client",
     "start-admin": "ts-node scripts/build.ts dev admin serve",
     "start-admin-prod": "ts-node scripts/build.ts prod admin serve",
     "build-admin": "ts-node scripts/build.ts prod admin",

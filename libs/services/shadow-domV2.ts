@@ -18,7 +18,7 @@ type PageHTMLSelector = `<${ValidComponentSelector}></${ValidComponentSelector}>
 export abstract class Component extends HTMLElement {
   static styles: string;
   abstract render: () => string;
-  abstract initializeBindings: () => void;
+  initializeBindings?: () => void;
 }
 
 // Overloaded function declarations for `registerComponent`
@@ -47,7 +47,9 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
         if (this.shadowRoot) {
           this.shadowRoot.adoptedStyleSheets = [styleSheet];
           this.shadowRoot.innerHTML = this.render();
-          this.initializeBindings();
+          if (this.initializeBindings) {
+            this.initializeBindings();
+          }
         }
       }
 
@@ -72,30 +74,46 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
   }
 }
 
-// Bind Reactive Properties
-export const bindReactiveProperty = (shadowRoot: any, reactiveVar: any, selector: any, propertyType: any, property?: any) => {
-  const element = shadowRoot.querySelector(selector);
+/**
+ * Compiler-generated activation function for reactive bindings.
+ * This is called at runtime with pre-computed binding information from the compiler.
+ *
+ * @param shadowRoot - The shadow root of the component
+ * @param reactiveVar - The reactive signal variable
+ * @param selector - The CSS selector for the target element (uses data-reactive-id)
+ * @param propertyType - The type of property to update ('style' | 'attribute' | 'innerText')
+ * @param property - The specific property name (for style/attribute types)
+ */
+export const __activateBinding = (
+  shadowRoot: ShadowRoot,
+  reactiveVar: { subscribe: (callback: (value: any) => void) => () => void },
+  selector: string,
+  propertyType: 'style' | 'attribute' | 'innerText',
+  property?: string,
+): void => {
+  const element = shadowRoot.querySelector(selector) as HTMLElement;
 
-// Determine the update function once, outside the subscribe
-  let updateElement: (newValue: any) => void;
-
-  if (propertyType === 'style') {
-    updateElement = (newValue: any) => {
-      element.style[property] = newValue;
-    };
-  } else if (propertyType === 'attribute') {
-    updateElement = (newValue: any) => {
-      element.setAttribute(property, newValue);
-    };
-  } else if (propertyType === 'innerText') {
-    updateElement = (newValue: any) => {
-      element.innerText = newValue;
-    };
-  } else {
-    // Fallback or throw an error for unsupported types
-    updateElement = () => {};
+  if (!element) {
+    console.warn(`[ReactiveBinding] Element not found for selector: ${selector}`);
+    return;
   }
 
-  // Subscribe just calls the pre-determined update function
+  // Pre-determine the update function based on property type
+  const updateElement: (newValue: any) => void =
+    propertyType === 'style' && property
+      ? (newValue) => {
+          element.style[property as any] = newValue;
+        }
+      : propertyType === 'attribute' && property
+      ? (newValue) => {
+          element.setAttribute(property, newValue);
+        }
+      : propertyType === 'innerText'
+      ? (newValue) => {
+          element.innerText = newValue;
+        }
+      : () => {};
+
+  // Subscribe to the reactive variable
   reactiveVar.subscribe(updateElement);
 };

@@ -4,8 +4,6 @@ import { MyElementComponent } from '@components';
 export default registerComponent(
   { selector: 'ui-landing-page', type: 'page' },
   class extends Component {
-    initializeBindings = () => {};
-
     render = () => {
       console.log('rendering landing page');
 

@@ -1,5 +1,5 @@
 import { signal } from '@models';
-import { bindReactiveProperty, Component, registerComponent } from '@services';
+import { Component, registerComponent } from '@services';
 
 interface MyElementProps {
   color: string;
@@ -11,17 +11,12 @@ export const MyElementComponent = registerComponent<MyElementProps>(
     color = signal(this.getAttribute('color'));
     text = signal('asdfs');
 
-    initializeBindings = () => {
-      bindReactiveProperty(this.shadowRoot, this.color, '.box', 'style', 'background-color');
-      bindReactiveProperty(this.shadowRoot, this.text, '.box2', 'innerText');
-
+    render = () => {
       setInterval(() => {
         this.color(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
         this.text(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
       }, 3000);
-    };
 
-    render = () => {
       return html`
         <div class="box" style="background-color: ${this.color()}"></div>
         <div class="box2">${this.text()}</div>
@@ -39,7 +34,7 @@ export const MyElementComponent = registerComponent<MyElementProps>(
       .box2 {
         width: 100%;
         height: 20px;
-        background-color: blue;
+        background-color: black;
         border-radius: 5px;
         border: 2px solid green;
       }
