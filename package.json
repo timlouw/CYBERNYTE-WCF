@@ -7,6 +7,7 @@
     "start-admin-prod": "ts-node scripts/build.ts prod admin serve",
     "build-admin": "ts-node scripts/build.ts prod admin",
     "speed-test": "lighthouse http://localhost:4200 --output json --output-path ./report.json --quiet --chrome-flags=\"--headless\" --only-categories=performance",
+    "benchmark": "node lighthouse.js --serve",
     "format": "prettier --write \"**/*.{ts,json,html}\"",
     "format:check": "prettier --check \"**/*.{ts,json,html}\"",
     "prepare": "husky install"
