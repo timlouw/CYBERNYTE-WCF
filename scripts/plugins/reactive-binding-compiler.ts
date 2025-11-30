@@ -172,6 +172,7 @@ export const reactiveBindingCompilerPlugin: Plugin = {
       let htmlMatch: RegExpExecArray | null;
       const allBindings: ReactiveBinding[] = [];
       let reactiveIdCounter = 0;
+      let extractedTemplateContent = '';
 
       // We need to process all html templates - reset the regex
       htmlTemplateRegex.lastIndex = 0;
@@ -182,17 +183,19 @@ export const reactiveBindingCompilerPlugin: Plugin = {
 
         // Only process reactive bindings if we found expressions
         if (expressions.length > 0) {
-          // Find all ${this.signalName()} patterns and their context
           const exprRegex = /\$\{(this\.(\w+)\(\))\}/g;
           let exprMatch: RegExpExecArray | null;
 
-          // We need to track positions to insert data-reactive-id
-          const insertions: { position: number; id: number; signalName: string; context: string }[] = [];
+          // Track edits: insertions and removals
+          const edits: { type: 'insert' | 'remove'; position: number; content?: string; length?: number; id?: number }[] = [];
 
           while ((exprMatch = exprRegex.exec(templateContent)) !== null) {
             const fullExpr = exprMatch[0];
             const signalName = exprMatch[2];
             const exprStart = exprMatch.index;
+
+            // Add removal of the expression
+            edits.push({ type: 'remove', position: exprStart, length: fullExpr.length });
 
             // Determine context: is this in a style, attribute, or text content?
             const beforeExpr = templateContent.substring(0, exprStart);
@@ -217,11 +220,10 @@ export const reactiveBindingCompilerPlugin: Plugin = {
             if (lastTagMatch) {
               const { propertyType, property } = determineBindingType(beforeExpr, afterExpr);
 
-              insertions.push({
+              edits.push({
+                type: 'insert',
                 position: lastTagMatch.index + lastTagMatch[1].length + 1, // After "<tagname"
                 id: reactiveIdCounter,
-                signalName,
-                context: propertyType,
               });
 
               const elementId = `r${reactiveIdCounter}`;
@@ -236,22 +238,27 @@ export const reactiveBindingCompilerPlugin: Plugin = {
             }
           }
 
-          // Apply insertions in reverse order to maintain positions
-          insertions.sort((a, b) => b.position - a.position);
+          // Apply edits in reverse order to maintain positions
+          edits.sort((a, b) => b.position - a.position);
 
-          // Track which elements already have data-reactive-id
           const processedPositions = new Set<number>();
 
-          for (const insertion of insertions) {
-            const beforeInsertion = templateContent.substring(0, insertion.position);
-            const afterInsertion = templateContent.substring(insertion.position);
+          for (const edit of edits) {
+            if (edit.type === 'remove') {
+              const before = templateContent.substring(0, edit.position);
+              const after = templateContent.substring(edit.position + edit.length!);
+              templateContent = before + after;
+            } else if (edit.type === 'insert') {
+              const beforeInsertion = templateContent.substring(0, edit.position);
+              const afterInsertion = templateContent.substring(edit.position);
 
-            const nextCloseBracket = afterInsertion.indexOf('>');
-            const tagContent = afterInsertion.substring(0, nextCloseBracket);
+              const nextCloseBracket = afterInsertion.indexOf('>');
+              const tagContent = afterInsertion.substring(0, nextCloseBracket);
 
-            if (!tagContent.includes(' id="r') && !processedPositions.has(insertion.position)) {
-              templateContent = beforeInsertion + ` id="r${insertion.id}"` + afterInsertion;
-              processedPositions.add(insertion.position);
+              if (!tagContent.includes(' id="r') && !processedPositions.has(edit.position)) {
+                templateContent = beforeInsertion + ` id="r${edit.id}"` + afterInsertion;
+                processedPositions.add(edit.position);
+              }
             }
           }
         }
@@ -267,8 +274,27 @@ export const reactiveBindingCompilerPlugin: Plugin = {
           });
         });
 
-        // Replace the original template with modified one (remove html tag, will be handled by css/html processing below)
-        modifiedSource = modifiedSource.replace(originalTemplate, `html\`${templateContent}\``);
+        extractedTemplateContent = templateContent;
+
+        // Replace the original template with empty string
+        modifiedSource = modifiedSource.replace(originalTemplate, '``');
+      }
+
+      // Inject static template
+      if (extractedTemplateContent) {
+        // Escape backticks in the content
+        const escapedContent = extractedTemplateContent.replace(/`/g, '\\`');
+        const staticTemplateCode = `
+  static template = (() => {
+    const t = document.createElement('template');
+    t.innerHTML = \`${escapedContent}\`;
+    return t;
+  })();
+`;
+        const classBodyRegex = /class\s+extends\s+Component\s*{/g;
+        modifiedSource = modifiedSource.replace(classBodyRegex, (match) => {
+          return `${match}${staticTemplateCode}`;
+        });
       }
 
       // Process css template literals (from unique-id-generator)

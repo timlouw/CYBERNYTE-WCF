@@ -19,6 +19,7 @@ type PageHTMLSelector = `<${ValidComponentSelector}></${ValidComponentSelector}>
 
 export abstract class Component extends HTMLElement {
   static styles: string;
+  static template?: HTMLTemplateElement;
   abstract render: () => string;
 }
 
@@ -51,7 +52,14 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
         this.attachShadow({ mode: 'open' });
         if (this.shadowRoot) {
           this.shadowRoot.adoptedStyleSheets = [styleSheet];
-          this.shadowRoot.innerHTML = this.render();
+
+          const ctor = this.constructor as typeof Component;
+          if (ctor.template) {
+            this.shadowRoot.appendChild(ctor.template.content.cloneNode(true));
+          } else {
+            this.shadowRoot.innerHTML = this.render();
+          }
+
           if (this.initializeBindings) {
             this.initializeBindings();
           }
