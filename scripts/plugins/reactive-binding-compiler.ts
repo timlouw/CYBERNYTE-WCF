@@ -96,6 +96,44 @@ const findReactiveExpressionsInRender = (sourceFile: ts.SourceFile): { expressio
 };
 
 /**
+ * Finds signal initializers that are static literals or simple binary expressions
+ */
+const findSignalInitializers = (sourceFile: ts.SourceFile): Map<string, string | number | boolean> => {
+  const initializers = new Map<string, string | number | boolean>();
+
+  const visit = (node: ts.Node) => {
+    if (ts.isPropertyDeclaration(node) && node.name && ts.isIdentifier(node.name) && node.initializer) {
+      if (ts.isCallExpression(node.initializer) && ts.isIdentifier(node.initializer.expression) && node.initializer.expression.text === 'signal') {
+        const args = node.initializer.arguments;
+        if (args.length > 0) {
+          const arg = args[0];
+          if (ts.isStringLiteral(arg)) {
+            initializers.set(node.name.text, arg.text);
+          } else if (ts.isNumericLiteral(arg)) {
+            initializers.set(node.name.text, Number(arg.text));
+          } else if (arg.kind === ts.SyntaxKind.TrueKeyword) {
+            initializers.set(node.name.text, true);
+          } else if (arg.kind === ts.SyntaxKind.FalseKeyword) {
+            initializers.set(node.name.text, false);
+          } else if (ts.isBinaryExpression(arg)) {
+            // Simple concatenation support
+            const left = arg.left;
+            const right = arg.right;
+            if (ts.isStringLiteral(left) && ts.isStringLiteral(right) && arg.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+              initializers.set(node.name.text, left.text + right.text);
+            }
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return initializers;
+};
+
+/**
  * Converts CSS property name to camelCase for direct style property access
  * e.g., "background-color" -> "backgroundColor"
  */
@@ -166,6 +204,7 @@ export const reactiveBindingCompilerPlugin: Plugin = {
       // Parse the source using TypeScript AST to find reactive expressions
       const sourceFile = ts.createSourceFile(args.path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
       const { expressions } = findReactiveExpressionsInRender(sourceFile);
+      const signalInitializers = findSignalInitializers(sourceFile);
 
       // Process html template literals
       const htmlTemplateRegex = /html`([\s\S]*?)`/g;
@@ -187,15 +226,22 @@ export const reactiveBindingCompilerPlugin: Plugin = {
           let exprMatch: RegExpExecArray | null;
 
           // Track edits: insertions and removals
-          const edits: { type: 'insert' | 'remove'; position: number; content?: string; length?: number; id?: number }[] = [];
+          const edits: { type: 'insert' | 'remove' | 'replace'; position: number; content?: string; length?: number; id?: number }[] = [];
 
           while ((exprMatch = exprRegex.exec(templateContent)) !== null) {
             const fullExpr = exprMatch[0];
             const signalName = exprMatch[2];
             const exprStart = exprMatch.index;
 
-            // Add removal of the expression
-            edits.push({ type: 'remove', position: exprStart, length: fullExpr.length });
+            const initialValue = signalInitializers.get(signalName);
+
+            if (initialValue !== undefined) {
+              // Replace with initial value
+              edits.push({ type: 'replace', position: exprStart, length: fullExpr.length, content: String(initialValue) });
+            } else {
+              // Add removal of the expression
+              edits.push({ type: 'remove', position: exprStart, length: fullExpr.length });
+            }
 
             // Determine context: is this in a style, attribute, or text content?
             const beforeExpr = templateContent.substring(0, exprStart);
@@ -248,6 +294,10 @@ export const reactiveBindingCompilerPlugin: Plugin = {
               const before = templateContent.substring(0, edit.position);
               const after = templateContent.substring(edit.position + edit.length!);
               templateContent = before + after;
+            } else if (edit.type === 'replace') {
+              const before = templateContent.substring(0, edit.position);
+              const after = templateContent.substring(edit.position + edit.length!);
+              templateContent = before + edit.content! + after;
             } else if (edit.type === 'insert') {
               const beforeInsertion = templateContent.substring(0, edit.position);
               const afterInsertion = templateContent.substring(edit.position);
@@ -335,18 +385,14 @@ export const reactiveBindingCompilerPlugin: Plugin = {
       }
 
       // Inject the entire initializeBindings function into the class
-      // Find the class body opening and inject after class properties
-      const classBodyRegex = /class\s+extends\s+Component\s*{\s*\n\s*uniqueID[^;]*;/g;
-      const classMatch = classBodyRegex.exec(modifiedSource);
+      const initBindingsFunction = bindingsCode
+        ? `\n\n  initializeBindings = () => {\n    // Auto-generated reactive bindings\n${bindingsCode}\n  };`
+        : `\n\n  initializeBindings = () => {};`;
 
-      if (classMatch) {
-        const insertPos = classMatch.index + classMatch[0].length;
-        const initBindingsFunction = bindingsCode
-          ? `\n\n  initializeBindings = () => {\n    // Auto-generated reactive bindings\n${bindingsCode}\n  };`
-          : `\n\n  initializeBindings = () => {};`;
-
-        modifiedSource = modifiedSource.substring(0, insertPos) + initBindingsFunction + modifiedSource.substring(insertPos);
-      }
+      const classBodyRegex = /class\s+extends\s+Component\s*{/g;
+      modifiedSource = modifiedSource.replace(classBodyRegex, (match) => {
+        return `${match}${initBindingsFunction}`;
+      });
 
       return {
         contents: modifiedSource,

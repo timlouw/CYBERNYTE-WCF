@@ -56,6 +56,7 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
           const ctor = this.constructor as typeof Component;
           if (ctor.template) {
             this.shadowRoot.appendChild(ctor.template.content.cloneNode(true));
+            this.render();
           } else {
             this.shadowRoot.innerHTML = this.render();
           }
