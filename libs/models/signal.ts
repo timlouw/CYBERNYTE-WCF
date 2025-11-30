@@ -1,32 +1,32 @@
-export const signal = (initialValue: any) => {
-  const eventTarget = new EventTarget();
-  let value = initialValue;
+export type Signal<T> = {
+  (newValue?: T): T;
+  subscribe: (callback: (val: T) => void) => () => void;
+};
 
-  const reactiveFunction = (newValue?: any) => {
-    if (!newValue) {
-      // Getter: Return the current value
-      return value;
-    } else {
-      // Setter: Update the value and notify subscribers if it changed
-      if (value !== newValue) {
-        value = newValue;
-        eventTarget.dispatchEvent(new CustomEvent('change', { detail: value }));
-      }
+export const signal = <T>(initialValue: T): Signal<T> => {
+  let value = initialValue;
+  const subscribers = new Set<(val: T) => void>();
+
+  function reactiveFunction(newValue?: T) {
+    if (arguments.length === 0) {
       return value;
     }
-  };
+    if (value !== newValue) {
+      value = newValue!;
+      for (const callback of subscribers) {
+        callback(value);
+      }
+    }
+    return value;
+  }
 
-  // Add the subscribe method to the reactive function
-  reactiveFunction.subscribe = (callback: any) => {
-    const listener = (e: any) => callback(e.detail);
-    eventTarget.addEventListener('change', listener);
-    // Immediately call the callback with the current value
+  (reactiveFunction as any).subscribe = (callback: (val: T) => void) => {
+    subscribers.add(callback);
     callback(value);
-    // Return an unsubscribe function
     return () => {
-      eventTarget.removeEventListener('change', listener);
+      subscribers.delete(callback);
     };
   };
 
-  return reactiveFunction;
+  return reactiveFunction as Signal<T>;
 };

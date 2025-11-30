@@ -19,9 +19,13 @@ export const MyElementComponent = registerComponent<MyElementProps>(
 
       update();
 
-      setInterval(() => {
+      setTimeout(() => {
         update();
       }, 3000);
+
+      setTimeout(() => {
+        update();
+      }, 6000);
 
       return html`
         <div class="box" style="background-color: ${this.color()}"></div>
