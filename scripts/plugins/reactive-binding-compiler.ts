@@ -5,7 +5,7 @@ import ts from 'typescript';
 interface ReactiveBinding {
   signalName: string;
   elementSelector: string;
-  propertyType: 'style' | 'attribute' | 'innerText';
+  propertyType: 'style' | 'attribute' | 'innerText' | 'event';
   property?: string;
 }
 
@@ -26,14 +26,20 @@ const generateRandomId = (): string => {
  */
 const extractSignalName = (expression: string): string | null => {
   // Match patterns like: this.signalName() or this.signalName
-  const match = expression.match(/this\.(\w+)\s*\(\s*\)/);
+  const match = expression.match(/this\.(\w+)(\s*\(\s*\))?/);
   return match ? match[1] : null;
 };
 
 /**
  * Determines the binding type based on context in the HTML
  */
-const determineBindingType = (beforeExpr: string, _afterExpr: string): { propertyType: 'style' | 'attribute' | 'innerText'; property?: string } => {
+const determineBindingType = (beforeExpr: string, _afterExpr: string): { propertyType: 'style' | 'attribute' | 'innerText' | 'event'; property?: string } => {
+  // Check for event: @event="${...}"
+  const eventMatch = beforeExpr.match(/@([\w-]+)\s*=\s*["']$/);
+  if (eventMatch) {
+    return { propertyType: 'event', property: eventMatch[1] };
+  }
+
   // Check if it's a style property: style="property: ${...}"
   const styleMatch = beforeExpr.match(/style\s*=\s*["'][^"']*?([\w-]+)\s*:\s*$/);
   if (styleMatch) {
@@ -141,10 +147,6 @@ const toCamelCase = (str: string): string => {
   return str.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
 };
 
-/**
- * Generates the compiled bindings code that will be injected
- * Uses specialized binding functions - no runtime type checks
- */
 const generateBindingsCode = (bindings: ReactiveBinding[]): string => {
   if (bindings.length === 0) return '';
 
@@ -155,6 +157,8 @@ const generateBindingsCode = (bindings: ReactiveBinding[]): string => {
         return `    __bindStyle(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}','${prop}');`;
       } else if (binding.propertyType === 'attribute') {
         return `    __bindAttr(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}','${binding.property}');`;
+      } else if (binding.propertyType === 'event') {
+        return `    __bindEvent(this,'${binding.elementSelector}','${binding.property}',this.${binding.signalName});`;
       } else {
         return `    __bindText(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}');`;
       }
@@ -375,8 +379,11 @@ export const reactiveBindingCompilerPlugin: Plugin = {
           const needsStyle = allBindings.some((b) => b.propertyType === 'style');
           const needsAttr = allBindings.some((b) => b.propertyType === 'attribute');
           const needsText = allBindings.some((b) => b.propertyType === 'innerText');
+          const needsEvent = allBindings.some((b) => b.propertyType === 'event');
 
-          const bindImports = [needsStyle ? '__bindStyle' : '', needsAttr ? '__bindAttr' : '', needsText ? '__bindText' : ''].filter(Boolean).join(', ');
+          const bindImports = [needsStyle ? '__bindStyle' : '', needsAttr ? '__bindAttr' : '', needsText ? '__bindText' : '', needsEvent ? '__bindEvent' : '']
+            .filter(Boolean)
+            .join(', ');
 
           if (bindImports) {
             modifiedSource = modifiedSource.replace(importMatch[0], `import {${existingImports}, ${bindImports} } from '@services'`);
