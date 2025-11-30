@@ -20,6 +20,27 @@ type PageHTMLSelector = `<${ValidComponentSelector}></${ValidComponentSelector}>
 export abstract class Component extends HTMLElement {
   static styles: string;
   abstract render: () => string;
+
+  _delegatedEvents = new Map<string, Map<string, (e: Event) => void>>();
+
+  _handleDelegatedEvent = (e: Event) => {
+    const eventName = e.type;
+    const handlers = this._delegatedEvents.get(eventName);
+    if (!handlers) return;
+
+    const path = e.composedPath();
+    for (const target of path) {
+      if (target instanceof HTMLElement && target.id) {
+        const handler = handlers.get(target.id);
+        if (handler) {
+          handler(e);
+          // We don't stop propagation here to allow bubbling if needed,
+          // but for delegation we usually handle the specific target.
+        }
+      }
+      if (target === this.shadowRoot) break;
+    }
+  };
 }
 
 // Overloaded function declarations for `registerComponent`
@@ -100,4 +121,13 @@ export const __bindText = (root: ShadowRoot, signal: Signal<any>, id: string): v
   __bind(root, signal, id, (el, v) => {
     el.textContent = v;
   });
+};
+
+/** Bind event listener via delegation */
+export const __bindEvent = (component: Component, id: string, eventName: string, handler: (e: Event) => void): void => {
+  if (!component._delegatedEvents.has(eventName)) {
+    component._delegatedEvents.set(eventName, new Map());
+    component.shadowRoot?.addEventListener(eventName, component._handleDelegatedEvent);
+  }
+  component._delegatedEvents.get(eventName)!.set(id, handler);
 };
