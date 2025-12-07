@@ -3,8 +3,9 @@ import { tscTypeCheckingPlugin } from './plugins/tsc-type-checker.js';
 import { customHashingPlugin } from './plugins/file-hash-generator.js';
 import { componentPrecompilerPlugin } from './plugins/component-precompiler.js';
 import { reactiveBindingCompilerPlugin } from './plugins/reactive-binding-compiler.js';
-import { blueOutput, distDir, entryPoints, environment, isProd, serve } from './shared-config.js';
 import { routesPrecompilerPlugin } from './plugins/routes-precompiler.js';
+import { registerComponentStripperPlugin } from './plugins/register-component-stripper.js';
+import { blueOutput, distDir, entryPoints, environment, isProd, serve } from './shared-config.js';
 
 // ESBUILD CONFIGS ---------------------------------------------------------------------------------------------------------------------------------
 const SharedConfig: BuildOptions = {
@@ -18,7 +19,7 @@ const SharedConfig: BuildOptions = {
   format: 'esm',
   sourcemap: false,
   write: false,
-  plugins: [tscTypeCheckingPlugin, customHashingPlugin, componentPrecompilerPlugin, routesPrecompilerPlugin, reactiveBindingCompilerPlugin],
+  plugins: [tscTypeCheckingPlugin, customHashingPlugin, componentPrecompilerPlugin, routesPrecompilerPlugin, registerComponentStripperPlugin, reactiveBindingCompilerPlugin],
 };
 
 const ProdConfig: BuildOptions = {
