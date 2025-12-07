@@ -1,4 +1,5 @@
 import type { Signal } from '@models';
+import { createComponentHTMLSelector } from './component-html.js';
 
 type LowercaseString = `${Lowercase<string>}`;
 type ValidComponentSelector = `${LowercaseString}-${LowercaseString}`;
@@ -75,15 +76,8 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
   if (config.type === 'page') {
     return `<${config.selector}></${config.selector}>` as PageHTMLSelector;
   } else {
-    return ((props: T) => `
-      <${config.selector}
-        ${Object.entries(props)
-          .map(([key, value]) => {
-            const val = typeof value === 'string' ? value : JSON.stringify(value) || '';
-            return `${key}="${val.replace(/"/g, '&quot;')}"`;
-          })
-          .join(' ')}>
-      </${config.selector}>`) as ComponentHTMLSelector<T>;
+    // Use the shared HTML generator - same function used at compile-time (CTFE)
+    return createComponentHTMLSelector<T>(config.selector);
   }
 }
 

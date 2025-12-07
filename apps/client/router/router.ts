@@ -23,8 +23,8 @@ const matchNewRoute = () => {
 const injectNewRoute = () => {
   newRoute
     .componentModule()
-    .then((module: any) => {
-      routerOutlet.innerHTML = module.default;
+    .then(() => {
+      routerOutlet.innerHTML = newRoute.selector!;
       routerOutlet.scrollTo({ top: 0, behavior: 'smooth' });
     })
     .catch((error: any) => {

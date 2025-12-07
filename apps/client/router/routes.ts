@@ -1,6 +1,7 @@
 export interface Route {
   componentModule: () => Promise<any>;
   title?: string;
+  selector?: string;
 }
 
 export const ROUTE_NOT_FOUND: Route = {
