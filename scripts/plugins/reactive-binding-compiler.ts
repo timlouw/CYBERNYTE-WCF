@@ -15,13 +15,6 @@ interface ParsedBinding {
 }
 
 /**
- * Generates a random unique ID for elements
- */
-const generateRandomId = (): string => {
-  return `id-${Math.random().toString(36).substring(2, 15)}`;
-};
-
-/**
  * Extracts signal name from an expression like "this.color()" or "this.text()"
  */
 const extractSignalName = (expression: string): string | null => {
@@ -195,12 +188,6 @@ export const reactiveBindingCompilerPlugin: Plugin = {
 
       let modifiedSource = source;
 
-      // Inject uniqueID variable at the start of each class (from unique-id-generator)
-      const classRegex = /class\s+extends\s+Component\s*{/g;
-      modifiedSource = modifiedSource.replace(classRegex, (match) => {
-        return `${match}\n  uniqueID = this.getAttribute('data-id');\n`;
-      });
-
       // Parse the source using TypeScript AST to find reactive expressions
       const sourceFile = ts.createSourceFile(args.path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
       const { expressions } = findReactiveExpressionsInRender(sourceFile);
@@ -312,17 +299,6 @@ export const reactiveBindingCompilerPlugin: Plugin = {
             }
           }
         }
-
-        // Add unique data-id to custom elements (from unique-id-generator)
-        customElements.forEach((customElement) => {
-          const customElementRegex = new RegExp(`<${customElement}([^>]*)>`, 'g');
-          templateContent = templateContent.replace(customElementRegex, (match, attrs) => {
-            if (!attrs.includes('data-id')) {
-              return `<${customElement} ${attrs.trim()} data-id="${generateRandomId()}">`;
-            }
-            return match;
-          });
-        });
 
         extractedTemplateContent = templateContent;
 
