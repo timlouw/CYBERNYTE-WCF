@@ -1,1 +1,1 @@
-export * from './shadow-domV2.js';
+export * from './shadow-dom.js';

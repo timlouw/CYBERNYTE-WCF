@@ -25,10 +25,10 @@ export abstract class Component extends HTMLElement {
 
 // Overloaded function declarations for `registerComponent`
 
-// For 'component' type, return a callable function that accepts props
+// OVERLOAD For 'component' type, return a callable function that accepts props
 export function registerComponent<T extends ComponentProps>(config: CreateComponentConfig & { type: 'component' }, component: InputComponent): ComponentHTMLSelector<T>;
 
-// For 'page' type, return a simple HTML template string
+// OVERLOAD For 'page' type, return a simple HTML template string
 export function registerComponent(config: CreateComponentConfig & { type: 'page' }, component: InputComponent): PageHTMLSelector;
 
 // Single function implementation to handle both cases
@@ -44,7 +44,7 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
         this.createComponent();
       }
 
-      render(): string {
+      private render(): string {
         return html``;
       }
 
@@ -78,7 +78,10 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
     return ((props: T) => `
       <${config.selector}
         ${Object.entries(props)
-          .map(([key, value]) => `${key}="${value}"`)
+          .map(([key, value]) => {
+            const val = typeof value === 'string' ? value : JSON.stringify(value) || '';
+            return `${key}="${val.replace(/"/g, '&quot;')}"`;
+          })
           .join(' ')}>
       </${config.selector}>`) as ComponentHTMLSelector<T>;
   }

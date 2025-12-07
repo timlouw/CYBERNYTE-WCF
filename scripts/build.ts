@@ -1,6 +1,7 @@
 import { build, BuildOptions, context } from 'esbuild';
 import { tscTypeCheckingPlugin } from './plugins/tsc-type-checker.js';
 import { customHashingPlugin } from './plugins/file-hash-generator.js';
+import { componentPrecompilerPlugin } from './plugins/component-precompiler.js';
 import { reactiveBindingCompilerPlugin } from './plugins/reactive-binding-compiler.js';
 import { blueOutput, distDir, entryPoints, environment, isProd, serve } from './shared-config.js';
 
@@ -16,7 +17,7 @@ const SharedConfig: BuildOptions = {
   format: 'esm',
   sourcemap: false,
   write: false,
-  plugins: [tscTypeCheckingPlugin, customHashingPlugin, reactiveBindingCompilerPlugin],
+  plugins: [tscTypeCheckingPlugin, customHashingPlugin, componentPrecompilerPlugin, reactiveBindingCompilerPlugin],
 };
 
 const ProdConfig: BuildOptions = {
