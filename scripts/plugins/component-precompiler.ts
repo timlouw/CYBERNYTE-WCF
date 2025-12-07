@@ -243,9 +243,7 @@ const evaluateExpression = (node: ts.Node, sourceFile: ts.SourceFile, classPrope
     if (condition === undefined) {
       return undefined;
     }
-    return condition
-      ? evaluateExpression(node.whenTrue, sourceFile, classProperties)
-      : evaluateExpression(node.whenFalse, sourceFile, classProperties);
+    return condition ? evaluateExpression(node.whenTrue, sourceFile, classProperties) : evaluateExpression(node.whenFalse, sourceFile, classProperties);
   }
 
   // Prefix unary expression (e.g., -5, !true)
@@ -298,7 +296,7 @@ const findEnclosingClass = (node: ts.Node): ts.ClassExpression | ts.ClassDeclara
 const findComponentCalls = (
   source: string,
   sourceFile: ts.SourceFile,
-  knownComponents: Map<string, ComponentDefinition>
+  knownComponents: Map<string, ComponentDefinition>,
 ): Array<{
   fullMatch: string;
   componentName: string;
@@ -413,10 +411,7 @@ export const componentPrecompilerPlugin: Plugin = {
 
       // Find all TypeScript files in libs/components and apps directories
       const workspaceRoot = process.cwd();
-      const searchDirs = [
-        path.join(workspaceRoot, 'libs', 'components'),
-        path.join(workspaceRoot, 'apps'),
-      ];
+      const searchDirs = [path.join(workspaceRoot, 'libs', 'components'), path.join(workspaceRoot, 'apps')];
 
       const collectFromDir = async (dir: string) => {
         try {
@@ -496,10 +491,7 @@ export const componentPrecompilerPlugin: Plugin = {
             const compiledHTML = generateComponentHTML(componentDef.selector, call.props);
 
             // Replace the ${ComponentName(...)} with the compiled HTML
-            modifiedSource =
-              modifiedSource.substring(0, call.startIndex) +
-              compiledHTML +
-              modifiedSource.substring(call.endIndex);
+            modifiedSource = modifiedSource.substring(0, call.startIndex) + compiledHTML + modifiedSource.substring(call.endIndex);
           }
         }
 
