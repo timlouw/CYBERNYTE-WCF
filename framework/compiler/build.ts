@@ -6,6 +6,30 @@ import { reactiveBindingCompilerPlugin } from './plugins/reactive-binding-compil
 import { routesPrecompilerPlugin } from './plugins/routes-precompiler.js';
 import { registerComponentStripperPlugin } from './plugins/register-component-stripper.js';
 import { blueOutput, distDir, entryPoints, environment, isProd, serve } from './shared-config.js';
+import { inspect } from 'util';
+
+// Helper to fully expand error objects
+function logFullError(err: unknown) {
+  console.error('Build failed with error:');
+  console.error(inspect(err, { depth: null, colors: true, showHidden: true }));
+  if (err && typeof err === 'object') {
+    console.error('All own properties:', Object.getOwnPropertyNames(err));
+    for (const key of Object.getOwnPropertyNames(err)) {
+      console.error(`  ${key}:`, inspect((err as any)[key], { depth: null, colors: true }));
+    }
+  }
+}
+
+// Catch unhandled rejections and uncaught exceptions
+process.on('unhandledRejection', (reason) => {
+  logFullError(reason);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  logFullError(err);
+  process.exit(1);
+});
 
 // ESBUILD CONFIGS ---------------------------------------------------------------------------------------------------------------------------------
 const SharedConfig: BuildOptions = {
@@ -46,7 +70,7 @@ const DevConfig: BuildOptions = {
       await ctx.watch({}).then(() => console.info(blueOutput, 'Watching for changes...'));
     }
   } catch (err) {
-    console.error(err);
+    logFullError(err);
     process.exit(1);
   }
 })();

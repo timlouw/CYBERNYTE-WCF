@@ -1,4 +1,4 @@
-import { signal } from '@models';
+import { signal } from '../../../framework/runtime/models/index.js';
 import { Component, registerComponent } from '@services';
 
 interface MyElementProps {

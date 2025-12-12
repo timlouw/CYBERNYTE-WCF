@@ -1,5 +1,5 @@
 import { Component, registerComponent } from '@services';
-import { MyElementComponent } from '@components';
+import { MyElementComponent } from '../components/test.js';
 
 export default registerComponent(
   { selector: 'ui-landing-page', type: 'page' },

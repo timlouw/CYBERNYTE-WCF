@@ -1,9 +1,10 @@
 {
   "type": "module",
   "scripts": {
-    "start": "node --loader ts-node/esm scripts/build.ts dev client serve",
-    "start-prod": "node --loader ts-node/esm scripts/build.ts prod client serve",
-    "build": "node --loader ts-node/esm scripts/build.ts prod client",
+    "start": "node --loader ts-node/esm framework/compiler/build.ts dev client serve",
+    "start-prod": "node --loader ts-node/esm framework/compiler/build.ts prod client serve",
+    "build": "node --loader ts-node/esm framework/compiler/build.ts dev client",
+    "build-prod": "node --loader ts-node/esm framework/compiler/build.ts prod client",
     "benchmark": "node lighthouse.js --serve",
     "format": "prettier --write \"**/*.{ts,json,html}\"",
     "format:check": "prettier --check \"**/*.{ts,json,html}\"",
