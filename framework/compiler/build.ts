@@ -30,19 +30,12 @@ const BaseConfig: BuildOptions = {
   entryNames: '[name]-[hash]',
   chunkNames: '[name]-[hash]',
   plugins: [
-    // Plugins ordered by execution flow:
-    // 1. TypeCheck     - Validate TypeScript before processing
-    // 2. RoutesPre     - Inject page selectors into routes
-    // 3. ComponentPre  - CTFE for component HTML generation
-    // 4. Reactive      - Compile reactive bindings
-    // 5. Stripper      - Remove compile-time-only code
-    // 6. PostBuild     - Copy assets, update HTML, start server
-    TypeCheckPlugin,
-    RoutesPrecompilerPlugin,
-    ComponentPrecompilerPlugin,
-    ReactiveBindingPlugin,
-    RegisterComponentStripperPlugin,
-    PostBuildPlugin,
+    TypeCheckPlugin, // 1. Validate TypeScript
+    RoutesPrecompilerPlugin, // 2. Inject page selectors into routes
+    ComponentPrecompilerPlugin, // 3. CTFE for component HTML generation
+    ReactiveBindingPlugin, // 4. Compile reactive signal bindings
+    RegisterComponentStripperPlugin, // 5. Remove compile-time-only code
+    PostBuildPlugin, // 6. Copy assets, update HTML, start server
   ],
 };
 
@@ -60,23 +53,21 @@ const ProdConfig: BuildOptions = {
 // Main Execution
 // ============================================================================
 (async () => {
+  const startTime = performance.now();
+
   console.info(consoleColors.blue, `Running ${environment} build...`);
 
   const buildConfig = isProd ? ProdConfig : DevConfig;
-  const startTime = performance.now();
 
   try {
     if (!serve) {
       await build(buildConfig);
-      const endTime = performance.now();
-      const buildTime = (endTime - startTime).toFixed(2);
-      console.info(consoleColors.green, `\n⏱️  Build completed in ${buildTime}ms`);
+      console.info(consoleColors.green, `\n⏱️  Build completed in ${(performance.now() - startTime).toFixed(2)}ms`);
     } else {
       const ctx = await context(buildConfig);
       await ctx.watch({}).then(() => console.info(consoleColors.blue, 'Watching for changes...'));
     }
   } catch (err) {
-    // logFullError(err);
     process.exit(1);
   }
 })();

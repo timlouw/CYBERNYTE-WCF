@@ -1,11 +1,26 @@
 import path from 'path';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
-import type { PageSelectorInfo } from '../types.js';
-import { createSourceFile, extractPageSelector, safeReadFile } from '../utils/index.js';
+import { extractPageSelector, safeReadFile, sourceCache, logger, PLUGIN_NAME, PROP } from '../utils/index.js';
+
+const NAME = PLUGIN_NAME.ROUTES;
+
+interface PageSelectorInfo {
+  importPath: string;
+  selector: string;
+}
+
+interface RouteObject {
+  importPath: string;
+  lastPropEnd: number;
+  needsComma: boolean;
+}
 
 /**
  * Resolves the page file path from the import statement in routes.
+ *
+ * @example
+ * // '../pages/landing.js' -> 'C:/project/apps/client/pages/landing.ts'
  */
 const resolvePagePath = (importPath: string, routesFilePath: string): string => {
   const routesDir = path.dirname(routesFilePath);
@@ -23,30 +38,34 @@ const resolvePagePath = (importPath: string, routesFilePath: string): string => 
 
 /**
  * Extracts all dynamic imports from the routes file and their corresponding selectors.
+ *
+ * @example
+ * // Input route config:
+ * // { path: '/', componentModule: () => import('../pages/landing.js') }
+ * //
+ * // Reads landing.ts, finds: registerComponent({ selector: 'ui-landing-page' })
+ * // Returns Map: { '../pages/landing.js' => { importPath: '...', selector: 'ui-landing-page' } }
  */
-const extractRouteImports = async (_source: string, sourceFile: ts.SourceFile, routesFilePath: string): Promise<Map<string, PageSelectorInfo>> => {
+const extractRouteImports = async (sourceFile: ts.SourceFile, routesFilePath: string): Promise<Map<string, PageSelectorInfo>> => {
   const pageSelectors = new Map<string, PageSelectorInfo>();
 
-  const visit = async (node: ts.Node) => {
-    // Find arrow functions that contain dynamic imports: () => import('../pages/xxx.js')
-    if (ts.isArrowFunction(node)) {
-      const body = node.body;
-      if (ts.isCallExpression(body)) {
-        const expr = body.expression;
-        // Check for import() calls
-        if (expr.kind === ts.SyntaxKind.ImportKeyword && body.arguments.length > 0) {
-          const importArg = body.arguments[0];
-          if (ts.isStringLiteral(importArg)) {
-            const importPath = importArg.text;
-            const pagePath = resolvePagePath(importPath, routesFilePath);
+  const processArrowFunction = async (node: ts.ArrowFunction) => {
+    const body = node.body;
+    if (ts.isCallExpression(body)) {
+      const expr = body.expression;
+      // Check for import() calls
+      if (expr.kind === ts.SyntaxKind.ImportKeyword && body.arguments.length > 0) {
+        const importArg = body.arguments[0];
+        if (ts.isStringLiteral(importArg)) {
+          const importPath = importArg.text;
+          const pagePath = resolvePagePath(importPath, routesFilePath);
 
-            const selector = await extractPageSelector(pagePath);
+          // Read and parse the page file
+          const cached = await sourceCache.get(pagePath);
+          if (cached) {
+            const selector = extractPageSelector(cached.sourceFile);
             if (selector) {
-              // Use the import path as key to match later
-              pageSelectors.set(importPath, {
-                importPath,
-                selector,
-              });
+              pageSelectors.set(importPath, { importPath, selector });
             }
           }
         }
@@ -55,20 +74,20 @@ const extractRouteImports = async (_source: string, sourceFile: ts.SourceFile, r
   };
 
   // Collect all arrow functions and process them
-  const collectNodes = (node: ts.Node): ts.ArrowFunction[] => {
+  const collectArrowFunctions = (node: ts.Node): ts.ArrowFunction[] => {
     const nodes: ts.ArrowFunction[] = [];
     if (ts.isArrowFunction(node)) {
       nodes.push(node);
     }
     ts.forEachChild(node, (child) => {
-      nodes.push(...collectNodes(child));
+      nodes.push(...collectArrowFunctions(child));
     });
     return nodes;
   };
 
-  const arrowFunctions = collectNodes(sourceFile);
+  const arrowFunctions = collectArrowFunctions(sourceFile);
   for (const fn of arrowFunctions) {
-    await visit(fn);
+    await processArrowFunction(fn);
   }
 
   return pageSelectors;
@@ -77,21 +96,33 @@ const extractRouteImports = async (_source: string, sourceFile: ts.SourceFile, r
 /**
  * Routes Precompiler Plugin - CTFE for Route Selectors
  *
- * This plugin implements Compile-Time Function Evaluation for routes by:
+ * ## What it does:
+ * Injects pre-computed selector HTML into route definitions at compile time.
  *
- * 1. Parsing the routes.ts file to find all dynamic imports
- * 2. For each import, parsing the corresponding page file
- * 3. Extracting the selector from the registerComponent call
- * 4. Injecting a 'selector' property with the fully rendered HTML tag
+ * ## Transformation Example:
+ * ```typescript
+ * // INPUT (routes.ts):
+ * export const routes = [
+ *   { path: '/', componentModule: () => import('../pages/landing.js') }
+ * ];
  *
- * The result is that routes have a pre-computed selector property like:
- *   selector: '<ui-landing-page></ui-landing-page>'
+ * // OUTPUT (after compilation):
+ * export const routes = [
+ *   { path: '/', componentModule: () => import('../pages/landing.js'),
+ *     selector: '<ui-landing-page></ui-landing-page>' }
+ * ];
+ * ```
  *
- * This allows the router to use innerHTML directly without needing
- * to call module.default to get the component tag.
+ * ## How it works:
+ * 1. Parse routes.ts to find all dynamic imports
+ * 2. For each import, parse the corresponding page file
+ * 3. Extract the selector from registerComponent({ selector: '...' })
+ * 4. Inject a 'selector' property with the fully rendered HTML tag
+ *
+ * This allows the router to use innerHTML directly without calling module.default.
  */
 export const RoutesPrecompilerPlugin: Plugin = {
-  name: 'routes-precompiler-plugin',
+  name: NAME,
   setup(build) {
     build.onLoad({ filter: /routes\.ts$/ }, async (args) => {
       try {
@@ -103,28 +134,18 @@ export const RoutesPrecompilerPlugin: Plugin = {
         const source = await safeReadFile(args.path);
         if (!source) return undefined;
 
-        const sourceFile = createSourceFile(args.path, source);
+        const sourceFile = sourceCache.parse(args.path, source);
 
         // Extract all page selectors from dynamic imports
-        const pageSelectors = await extractRouteImports(source, sourceFile, args.path);
+        const pageSelectors = await extractRouteImports(sourceFile, args.path);
 
         if (pageSelectors.size === 0) {
           return undefined;
         }
 
-        console.log(`[Routes CTFE] Found ${pageSelectors.size} page selector(s) for compile-time injection`);
+        logger.info(NAME, `Found ${pageSelectors.size} page selector(s) for CTFE injection`);
 
-        let modifiedSource = source;
-
-        // We need to process from bottom to top to maintain correct positions
-        // Collect all objects first, then process in reverse order
-        interface RouteObject {
-          node: ts.ObjectLiteralExpression;
-          importPath: string;
-          lastPropEnd: number;
-          needsComma: boolean;
-        }
-
+        // Collect route objects that need selector injection
         const routeObjects: RouteObject[] = [];
 
         const collectRouteObjects = (node: ts.Node): void => {
@@ -134,20 +155,18 @@ export const RoutesPrecompilerPlugin: Plugin = {
             let lastProp: ts.ObjectLiteralElementLike | null = null;
 
             for (const prop of node.properties) {
-              lastProp = prop; // Track the last property
+              lastProp = prop;
               if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
-                if (prop.name.text === 'componentModule') {
-                  if (ts.isArrowFunction(prop.initializer)) {
-                    const body = prop.initializer.body;
-                    if (ts.isCallExpression(body) && body.arguments.length > 0) {
-                      const importArg = body.arguments[0];
-                      if (ts.isStringLiteral(importArg)) {
-                        importPath = importArg.text;
-                      }
+                if (prop.name.text === PROP.COMPONENT_MODULE && ts.isArrowFunction(prop.initializer)) {
+                  const body = prop.initializer.body;
+                  if (ts.isCallExpression(body) && body.arguments.length > 0) {
+                    const importArg = body.arguments[0];
+                    if (ts.isStringLiteral(importArg)) {
+                      importPath = importArg.text;
                     }
                   }
                 }
-                if (prop.name.text === 'selector') {
+                if (prop.name.text === PROP.SELECTOR) {
                   hasSelector = true;
                 }
               }
@@ -157,12 +176,10 @@ export const RoutesPrecompilerPlugin: Plugin = {
               const selectorInfo = pageSelectors.get(importPath);
               if (selectorInfo) {
                 const lastPropEnd = lastProp.getEnd();
-                // Check if there's a comma after the last property
                 const afterProp = source.substring(lastPropEnd, lastPropEnd + 10);
                 const hasTrailingComma = afterProp.trim().startsWith(',');
 
                 routeObjects.push({
-                  node,
                   importPath,
                   lastPropEnd: hasTrailingComma ? lastPropEnd + afterProp.indexOf(',') + 1 : lastPropEnd,
                   needsComma: !hasTrailingComma,
@@ -180,7 +197,7 @@ export const RoutesPrecompilerPlugin: Plugin = {
         routeObjects.sort((a, b) => b.lastPropEnd - a.lastPropEnd);
 
         // Apply injections
-        modifiedSource = source;
+        let modifiedSource = source;
         for (const routeObj of routeObjects) {
           const selectorInfo = pageSelectors.get(routeObj.importPath);
           if (selectorInfo) {
@@ -195,8 +212,8 @@ export const RoutesPrecompilerPlugin: Plugin = {
           contents: modifiedSource,
           loader: 'ts',
         };
-      } catch (err) {
-        console.error('[Routes CTFE] Error processing routes file:', args.path, err);
+      } catch (error) {
+        logger.error(NAME, `Error processing ${args.path}`, error);
         return undefined;
       }
     });

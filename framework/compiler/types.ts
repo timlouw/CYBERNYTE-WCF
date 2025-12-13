@@ -3,6 +3,16 @@
 // ============================================================================
 
 /**
+ * Supported applications in the monorepo
+ */
+export type Application = 'client' | 'admin';
+
+/**
+ * Build environment
+ */
+export type Environment = 'dev' | 'prod';
+
+/**
  * Component definition extracted from source files
  */
 export interface ComponentDefinition {

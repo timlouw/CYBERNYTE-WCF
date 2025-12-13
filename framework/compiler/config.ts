@@ -1,9 +1,4 @@
-// ============================================================================
-// Types
-// ============================================================================
-
-export type Application = 'client' | 'admin';
-export type Environment = 'dev' | 'prod';
+import type { Application, Environment } from './types.js';
 
 // ============================================================================
 // Script Arguments

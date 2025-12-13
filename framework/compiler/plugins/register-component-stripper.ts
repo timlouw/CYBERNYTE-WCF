@@ -1,41 +1,53 @@
 import fs from 'fs';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
-import type { CodeRemoval } from '../types.js';
-import { createSourceFile, applyCodeRemovals } from '../utils/index.js';
+import { sourceCache, removeCode, logger, PLUGIN_NAME, COMPONENT_TYPE } from '../utils/index.js';
+import type { CodeRemoval } from '../utils/source-editor.js';
+
+const NAME = PLUGIN_NAME.STRIPPER;
 
 /**
  * Register Component Return Stripper Plugin
  *
- * This plugin strips the return code from the registerComponent function at compile time.
- *
- * Why this is needed:
+ * ## Why this is needed:
  * - The return code (createComponentHTMLSelector / template string) is only used at compile-time
  * - The component-precompiler and routes-precompiler already execute this at compile-time (CTFE)
  * - At runtime, registerComponent only needs to register the custom element
- * - Keeping the return code and the functions it calls (generateComponentHTML, createComponentHTMLSelector)
- *   bloats the runtime bundle unnecessarily
+ * - Keeping the return code bloats the runtime bundle unnecessarily
  *
- * What this plugin does:
- * 1. For shadow-dom.ts:
- *    - Removes the conditional return statement at the end of registerComponent
- *    - Removes the import of createComponentHTMLSelector (no longer needed at runtime)
- * 2. For services/index.ts:
- *    - Removes the re-export of component-html.js (only needed at compile-time)
+ * ## What this plugin does:
  *
- * This effectively makes registerComponent a void function at runtime while
- * preserving the return types in the source for development type-checking.
+ * ### For shadow-dom.ts:
+ * ```typescript
+ * // BEFORE:
+ * function registerComponent(config) {
+ *   customElements.define(config.selector, ...);
+ *   if (config.type === 'page') {
+ *     return createComponentHTMLSelector(config.selector);
+ *   }
+ *   return (...) => generateComponentHTML(...);
+ * }
+ *
+ * // AFTER:
+ * function registerComponent(config) {
+ *   customElements.define(config.selector, ...);
+ *   // return code stripped - function is now void at runtime
+ * }
+ * ```
+ *
+ * ### For services/index.ts:
+ * - Removes the re-export of component-html.js (only needed at compile-time)
  */
 export const RegisterComponentStripperPlugin: Plugin = {
-  name: 'register-component-stripper-plugin',
+  name: NAME,
   setup(build) {
     // Handle shadow-dom.ts - strip the registerComponent return code
     build.onLoad({ filter: /shadow-dom\.ts$/ }, async (args) => {
       try {
         const source = await fs.promises.readFile(args.path, 'utf8');
-        const sourceFile = createSourceFile(args.path, source);
+        const sourceFile = sourceCache.parse(args.path, source);
 
-        // Track positions to remove (process from bottom to top)
+        // Track positions to remove
         const removals: CodeRemoval[] = [];
 
         const visit = (node: ts.Node) => {
@@ -51,7 +63,7 @@ export const RegisterComponentStripperPlugin: Plugin = {
                   ts.isPropertyAccessExpression(condition.left) &&
                   condition.left.name.text === 'type' &&
                   ts.isStringLiteral(condition.right) &&
-                  condition.right.text === 'page'
+                  condition.right.text === COMPONENT_TYPE.PAGE
                 ) {
                   // This is the return code block - mark it for removal
                   removals.push({
@@ -68,7 +80,6 @@ export const RegisterComponentStripperPlugin: Plugin = {
           if (ts.isImportDeclaration(node)) {
             const moduleSpecifier = node.moduleSpecifier;
             if (ts.isStringLiteral(moduleSpecifier) && moduleSpecifier.text.includes('component-html')) {
-              // Check if it's importing createComponentHTMLSelector
               const importClause = node.importClause;
               if (importClause?.namedBindings && ts.isNamedImports(importClause.namedBindings)) {
                 const imports = importClause.namedBindings.elements;
@@ -86,7 +97,6 @@ export const RegisterComponentStripperPlugin: Plugin = {
                     // Otherwise, just remove the createComponentHTMLSelector from the named imports
                     for (const el of imports) {
                       if (el.name.text === 'createComponentHTMLSelector') {
-                        // Include the comma if there is one
                         let start = el.getStart(sourceFile);
                         let end = el.getEnd();
 
@@ -126,14 +136,14 @@ export const RegisterComponentStripperPlugin: Plugin = {
           return undefined;
         }
 
-        console.log(`[RegisterComponent Stripper] Removing ${removals.length} code block(s) from shadow-dom.ts`);
+        logger.info(NAME, `Removing ${removals.length} code block(s) from shadow-dom.ts`);
 
         return {
-          contents: applyCodeRemovals(source, removals),
+          contents: removeCode(source, removals),
           loader: 'ts',
         };
-      } catch (err) {
-        console.error('[RegisterComponent Stripper] Error processing file:', args.path, err);
+      } catch (error) {
+        logger.error(NAME, `Error processing ${args.path}`, error);
         return undefined;
       }
     });
@@ -142,7 +152,7 @@ export const RegisterComponentStripperPlugin: Plugin = {
     build.onLoad({ filter: /services[/\\]index\.ts$/ }, async (args) => {
       try {
         const source = await fs.promises.readFile(args.path, 'utf8');
-        const sourceFile = createSourceFile(args.path, source);
+        const sourceFile = sourceCache.parse(args.path, source);
 
         const removals: CodeRemoval[] = [];
 
@@ -167,14 +177,14 @@ export const RegisterComponentStripperPlugin: Plugin = {
           return undefined;
         }
 
-        console.log(`[RegisterComponent Stripper] Removing ${removals.length} export(s) from services/index.ts`);
+        logger.info(NAME, `Removing ${removals.length} export(s) from services/index.ts`);
 
         return {
-          contents: applyCodeRemovals(source, removals),
+          contents: removeCode(source, removals),
           loader: 'ts',
         };
-      } catch (err) {
-        console.error('[RegisterComponent Stripper] Error processing file:', args.path, err);
+      } catch (error) {
+        logger.error(NAME, `Error processing ${args.path}`, error);
         return undefined;
       }
     });

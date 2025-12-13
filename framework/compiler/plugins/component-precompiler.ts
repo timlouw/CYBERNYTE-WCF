@@ -5,51 +5,20 @@ import ts from 'typescript';
 import vm from 'vm';
 import { generateComponentHTML } from '../../runtime/dom/component-html.js';
 import type { ComponentDefinition } from '../types.js';
-import { createSourceFile, extractRegisterComponentConfig, isRegisterComponentCall } from '../utils/index.js';
+import { extractComponentDefinitions, findEnclosingClass, isSignalCall, collectFilesRecursively, sourceCache, logger, PLUGIN_NAME, FN } from '../utils/index.js';
 
-/**
- * Extracts component definitions from source files using TypeScript AST.
- * More robust than regex - handles formatting variations and comments.
- */
-const extractComponentDefinitions = (source: string, filePath: string): ComponentDefinition[] => {
-  const definitions: ComponentDefinition[] = [];
-  const sourceFile = createSourceFile(filePath, source);
-
-  const visit = (node: ts.Node) => {
-    if (ts.isVariableStatement(node)) {
-      const hasExport = node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
-      if (hasExport) {
-        for (const decl of node.declarationList.declarations) {
-          if (ts.isIdentifier(decl.name) && decl.initializer && ts.isCallExpression(decl.initializer) && isRegisterComponentCall(decl.initializer)) {
-            const configArg = decl.initializer.arguments[0];
-            if (configArg && ts.isObjectLiteralExpression(configArg)) {
-              const { selector, type } = extractRegisterComponentConfig(configArg);
-
-              // Only register 'component' type (not 'page')
-              if (selector && type === 'component') {
-                definitions.push({
-                  name: decl.name.text,
-                  selector,
-                  filePath,
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-
-    ts.forEachChild(node, visit);
-  };
-
-  visit(sourceFile);
-  return definitions;
-};
+const NAME = PLUGIN_NAME.COMPONENT;
 
 /**
  * Creates a compile-time evaluation context for static expressions.
  * Uses Node.js vm module to actually execute code at compile time.
+ *
  * This is TRUE CTFE - we're running JavaScript code during compilation!
+ *
+ * @example
+ * // Given class properties: { title: 'Hello', count: 5 }
+ * // Can evaluate: `this.title + ' World'` => 'Hello World'
+ * // Can evaluate: `this.count * 2` => 10
  */
 const createCTFEContext = (classProperties: Map<string, any>) => {
   const sandbox: Record<string, any> = {
@@ -169,6 +138,15 @@ const evaluateExpressionCTFE = (node: ts.Node, sourceFile: ts.SourceFile, classP
 
 /**
  * Extracts static class properties that can be evaluated at compile time.
+ * Skips reactive signal properties since they can change at runtime.
+ *
+ * @example
+ * // Given class:
+ * // class MyComponent {
+ * //   title = 'Hello';           // ✓ Can CTFE
+ * //   count = signal(0);         // ✗ Skip (reactive)
+ * //   message = this.title + '!'; // ✓ Can CTFE after resolving dependencies
+ * // }
  */
 const extractClassPropertiesCTFE = (classNode: ts.ClassExpression | ts.ClassDeclaration, sourceFile: ts.SourceFile): Map<string, any> => {
   const resolvedProperties = new Map<string, any>();
@@ -178,11 +156,8 @@ const extractClassPropertiesCTFE = (classNode: ts.ClassExpression | ts.ClassDecl
   for (const member of classNode.members) {
     if (ts.isPropertyDeclaration(member) && member.name && ts.isIdentifier(member.name) && member.initializer) {
       // Skip signal properties - they're reactive and can't be CTFE'd
-      if (ts.isCallExpression(member.initializer)) {
-        const callee = member.initializer.expression;
-        if (ts.isIdentifier(callee) && callee.text === 'signal') {
-          continue;
-        }
+      if (ts.isCallExpression(member.initializer) && isSignalCall(member.initializer)) {
+        continue;
       }
 
       const propName = member.name.text;
@@ -210,20 +185,6 @@ const extractClassPropertiesCTFE = (classNode: ts.ClassExpression | ts.ClassDecl
   }
 
   return resolvedProperties;
-};
-
-/**
- * Finds the enclosing class for a given node
- */
-const findEnclosingClass = (node: ts.Node): ts.ClassExpression | ts.ClassDeclaration | null => {
-  let current: ts.Node | undefined = node;
-  while (current) {
-    if (ts.isClassExpression(current) || ts.isClassDeclaration(current)) {
-      return current;
-    }
-    current = current.parent;
-  }
-  return null;
 };
 
 /**
@@ -314,27 +275,31 @@ const findComponentCallsCTFE = (
 /**
  * Component Precompiler Plugin - TRUE CTFE Implementation
  *
- * This plugin implements Compile-Time Function Evaluation (CTFE) by:
+ * ## What it does:
+ * Evaluates component calls at compile time and replaces them with generated HTML.
  *
- * 1. Using TypeScript AST for accurate parsing (no fragile regex)
- * 2. Using Node.js vm module to ACTUALLY EXECUTE expressions at compile time
- * 3. Calling the same generateComponentHTML function that runs at runtime
+ * ## Transformation Example:
+ * ```typescript
+ * // INPUT:
+ * html`<div>${Button({ text: 'Click me' })}</div>`
  *
- * What makes this TRUE CTFE:
+ * // OUTPUT:
+ * `<div><ui-button text="Click me"></ui-button></div>`
+ * ```
+ *
+ * ## How it works:
+ * 1. Uses TypeScript AST for accurate parsing (no fragile regex)
+ * 2. Uses Node.js vm module to ACTUALLY EXECUTE expressions at compile time
+ * 3. Calls the same generateComponentHTML function that runs at runtime
+ *
+ * ## What makes this TRUE CTFE:
  * - The vm module actually executes JavaScript during compilation
  * - Props are evaluated by running the actual expression code
  * - The HTML generation uses the same logic as runtime
  * - No manual reimplementation of expression evaluation
- *
- * Comparison to fake CTFE:
- * - Fake: Manually handle each expression type (string concat, arithmetic, etc.)
- * - True: Use vm.runInContext() to execute the actual expression
- *
- * - Fake: Duplicate the generateComponentHTML logic
- * - True: Use the same function (or identical implementation verified by tests)
  */
 export const ComponentPrecompilerPlugin: Plugin = {
-  name: 'component-precompiler-plugin',
+  name: NAME,
   setup(build) {
     const componentDefinitions = new Map<string, ComponentDefinition>();
 
@@ -344,40 +309,30 @@ export const ComponentPrecompilerPlugin: Plugin = {
     // First pass: collect all component definitions using AST
     build.onStart(async () => {
       componentDefinitions.clear();
+      sourceCache.clear(); // Clear cache between builds
 
       const workspaceRoot = process.cwd();
       const searchDirs = [path.join(workspaceRoot, 'libs', 'components'), path.join(workspaceRoot, 'apps')];
 
-      const collectFromDir = async (dir: string) => {
-        try {
-          const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-          for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-              await collectFromDir(fullPath);
-            } else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
-              try {
-                const source = await fs.promises.readFile(fullPath, 'utf8');
-                const definitions = extractComponentDefinitions(source, fullPath);
-                for (const def of definitions) {
-                  componentDefinitions.set(def.name, def);
-                }
-              } catch {
-                // Skip files that can't be read
-              }
-            }
-          }
-        } catch {
-          // Skip directories that don't exist
-        }
-      };
+      // Use shared file collection utility (B2)
+      const tsFilter = (name: string) => name.endsWith('.ts') && !name.endsWith('.d.ts');
 
       for (const dir of searchDirs) {
-        await collectFromDir(dir);
+        const files = await collectFilesRecursively(dir, tsFilter);
+
+        for (const filePath of files) {
+          const cached = await sourceCache.get(filePath);
+          if (cached) {
+            const definitions = extractComponentDefinitions(cached.sourceFile, filePath);
+            for (const def of definitions) {
+              componentDefinitions.set(def.name, def);
+            }
+          }
+        }
       }
 
       if (componentDefinitions.size > 0) {
-        console.log(`[CTFE] Found ${componentDefinitions.size} component(s) for compile-time evaluation`);
+        logger.info(NAME, `Found ${componentDefinitions.size} component(s) for CTFE`);
       }
     });
 
@@ -390,11 +345,12 @@ export const ComponentPrecompilerPlugin: Plugin = {
 
         const source = await fs.promises.readFile(args.path, 'utf8');
 
-        if (!source.includes('html`')) {
+        // Early return if no html templates (D2)
+        if (!source.includes(FN.HTML + '`')) {
           return undefined;
         }
 
-        // Quick check for component usage
+        // Quick check for component usage (D2)
         let hasComponentCalls = false;
         for (const [componentName] of componentDefinitions) {
           if (source.includes(componentName + '(')) {
@@ -407,7 +363,7 @@ export const ComponentPrecompilerPlugin: Plugin = {
           return undefined;
         }
 
-        const sourceFile = ts.createSourceFile(args.path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+        const sourceFile = sourceCache.parse(args.path, source);
         const componentCalls = findComponentCallsCTFE(source, sourceFile, componentDefinitions);
 
         if (componentCalls.length === 0) {
@@ -431,7 +387,8 @@ export const ComponentPrecompilerPlugin: Plugin = {
           }
         }
 
-        // Strip template tags (html` and css` become just template literals)
+        // Strip template tags - now handled via simple string replace since AST already processed content
+        // Note: This is intentionally after CTFE so the tagged templates are already transformed
         modifiedSource = modifiedSource.replace(/css`/g, '`');
         modifiedSource = modifiedSource.replace(/html`/g, '`');
 
@@ -439,8 +396,8 @@ export const ComponentPrecompilerPlugin: Plugin = {
           contents: modifiedSource,
           loader: 'ts',
         };
-      } catch (err) {
-        console.error('[CTFE] Error processing file:', args.path, err);
+      } catch (error) {
+        logger.error(NAME, `Error processing ${args.path}`, error);
         return undefined;
       }
     });

@@ -2,87 +2,33 @@ import fs from 'fs';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
 import type { ReactiveBinding, SignalExpression, TemplateEdit, ImportInfo } from '../types.js';
-import { findClassExtending, applySourceEdits } from '../utils/index.js';
+import {
+  findComponentClass,
+  findSignalInitializers,
+  getSignalGetterName,
+  extractTemplateContent,
+  isHtmlTemplate,
+  isCssTemplate,
+  applyEdits,
+  sourceCache,
+  logger,
+  hasHtmlTemplates,
+  extendsComponent,
+  PLUGIN_NAME,
+} from '../utils/index.js';
 
-// ============================================================================
-// AST Utilities
-// ============================================================================
-
-/**
- * Check if a call expression is a signal call: signal(...)
- */
-const isSignalCall = (node: ts.CallExpression): boolean => {
-  return ts.isIdentifier(node.expression) && node.expression.text === 'signal';
-};
-
-/**
- * Check if a call expression is a signal getter: this.signalName()
- */
-const isSignalGetter = (node: ts.CallExpression, sourceFile: ts.SourceFile): string | null => {
-  if (
-    ts.isPropertyAccessExpression(node.expression) &&
-    node.expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
-    ts.isIdentifier(node.expression.name) &&
-    node.arguments.length === 0
-  ) {
-    return node.expression.name.text;
-  }
-  return null;
-};
+const NAME = PLUGIN_NAME.REACTIVE;
 
 /**
- * Extract static value from signal initializer if possible
- */
-const extractStaticValue = (arg: ts.Expression): string | number | boolean | null => {
-  if (ts.isStringLiteral(arg)) {
-    return arg.text;
-  }
-  if (ts.isNumericLiteral(arg)) {
-    return Number(arg.text);
-  }
-  if (arg.kind === ts.SyntaxKind.TrueKeyword) {
-    return true;
-  }
-  if (arg.kind === ts.SyntaxKind.FalseKeyword) {
-    return false;
-  }
-  // Simple string concatenation: "a" + "b"
-  if (ts.isBinaryExpression(arg) && arg.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-    const left = extractStaticValue(arg.left);
-    const right = extractStaticValue(arg.right);
-    if (typeof left === 'string' && typeof right === 'string') {
-      return left + right;
-    }
-  }
-  return null;
-};
-
-/**
- * Find all signal property declarations and their initial values
- */
-const findSignalInitializers = (sourceFile: ts.SourceFile): Map<string, string | number | boolean> => {
-  const initializers = new Map<string, string | number | boolean>();
-
-  const visit = (node: ts.Node) => {
-    if (ts.isPropertyDeclaration(node) && node.name && ts.isIdentifier(node.name) && node.initializer && ts.isCallExpression(node.initializer) && isSignalCall(node.initializer)) {
-      const args = node.initializer.arguments;
-      if (args.length > 0) {
-        const value = extractStaticValue(args[0]);
-        if (value !== null) {
-          initializers.set(node.name.text, value);
-        }
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-
-  visit(sourceFile);
-  return initializers;
-};
-
-/**
- * Find import declarations that import from shadow-dom (Component, registerComponent)
- * These imports will be updated to include bind functions from dom/index
+ * Find import declarations that import from shadow-dom (Component, registerComponent).
+ * These imports will be updated to include bind functions from dom/index.
+ *
+ * @example
+ * // INPUT:
+ * import { Component, registerComponent } from '../framework/runtime/dom/shadow-dom.js';
+ *
+ * // Will be updated to:
+ * import { Component, registerComponent, __bindText, __bindStyle } from '../framework/runtime/dom/index.js';
  */
 const findServicesImport = (sourceFile: ts.SourceFile): ImportInfo | null => {
   for (const statement of sourceFile.statements) {
@@ -120,32 +66,41 @@ const findServicesImport = (sourceFile: ts.SourceFile): ImportInfo | null => {
 };
 
 /**
- * Find all html tagged template literals and extract signal expressions
+ * Template info extracted from html tagged template literals
  */
-const findHtmlTemplates = (
-  sourceFile: ts.SourceFile,
-): Array<{
+interface TemplateInfo {
   node: ts.TaggedTemplateExpression;
   expressions: SignalExpression[];
   templateStart: number;
   templateEnd: number;
-}> => {
-  const templates: Array<{
-    node: ts.TaggedTemplateExpression;
-    expressions: SignalExpression[];
-    templateStart: number;
-    templateEnd: number;
-  }> = [];
+}
+
+/**
+ * Find all html tagged template literals and extract signal expressions.
+ *
+ * @example
+ * // INPUT:
+ * html`<div>${this.count()}</div>`
+ *
+ * // Returns:
+ * // [{
+ * //   expressions: [{ signalName: 'count', fullExpression: 'this.count()', ... }],
+ * //   templateStart: 0,
+ * //   templateEnd: 28
+ * // }]
+ */
+const findHtmlTemplates = (sourceFile: ts.SourceFile): TemplateInfo[] => {
+  const templates: TemplateInfo[] = [];
 
   const visit = (node: ts.Node) => {
-    if (ts.isTaggedTemplateExpression(node) && ts.isIdentifier(node.tag) && node.tag.text === 'html') {
+    if (ts.isTaggedTemplateExpression(node) && isHtmlTemplate(node)) {
       const template = node.template;
       const expressions: SignalExpression[] = [];
 
       if (ts.isTemplateExpression(template)) {
         for (const span of template.templateSpans) {
           if (ts.isCallExpression(span.expression)) {
-            const signalName = isSignalGetter(span.expression, sourceFile);
+            const signalName = getSignalGetterName(span.expression);
             if (signalName) {
               expressions.push({
                 signalName,
@@ -171,13 +126,6 @@ const findHtmlTemplates = (
 
   visit(sourceFile);
   return templates;
-};
-
-/**
- * Find the class that extends Component
- */
-const findComponentClass = (sourceFile: ts.SourceFile): ts.ClassExpression | ts.ClassDeclaration | null => {
-  return findClassExtending(sourceFile, 'Component');
 };
 
 // ============================================================================
@@ -388,11 +336,30 @@ const generateUpdatedImport = (importInfo: ImportInfo, requiredBindFunctions: st
 // ============================================================================
 
 /**
- * Process the source file and return transformed source
+ * Process the source file and return transformed source.
+ *
+ * ## Transformation Example:
+ * ```typescript
+ * // INPUT:
+ * class MyComponent extends Component {
+ *   count = signal(0);
+ *   render = () => html`<div>${this.count()}</div>`;
+ * }
+ *
+ * // OUTPUT:
+ * class MyComponent extends Component {
+ *   static template = (() => { const t = document.createElement('template'); t.innerHTML = `<div id="r0">0</div>`; return t; })();
+ *   initializeBindings = () => {
+ *     __bindText(this.shadowRoot, this.count, 'r0');
+ *   };
+ *   count = signal(0);
+ *   render = () => ``;
+ * }
+ * ```
  */
 const transformComponentSource = (source: string, filePath: string): string | null => {
-  // Parse source with TypeScript
-  const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  // Parse source with TypeScript (use cache)
+  const sourceFile = sourceCache.parse(filePath, source);
 
   // Find component class
   const componentClass = findComponentClass(sourceFile);
@@ -400,7 +367,7 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     return null;
   }
 
-  // Find signal initializers
+  // Find signal initializers (uses shared utility H3)
   const signalInitializers = findSignalInitializers(sourceFile);
 
   // Find services import (using AST)
@@ -415,22 +382,9 @@ const transformComponentSource = (source: string, filePath: string): string | nu
   let idCounter = 0;
   let lastProcessedTemplateContent = '';
 
-  // Process each html template
+  // Process each html template (B5 - simplified using extractTemplateContent)
   for (const templateInfo of htmlTemplates) {
-    const template = templateInfo.node.template;
-    let templateContent = '';
-
-    // Extract raw template content
-    if (ts.isNoSubstitutionTemplateLiteral(template)) {
-      templateContent = template.text;
-    } else if (ts.isTemplateExpression(template)) {
-      // Reconstruct the template content from parts
-      templateContent = template.head.text;
-      for (const span of template.templateSpans) {
-        templateContent += '${' + span.expression.getText(sourceFile) + '}';
-        templateContent += span.literal.text;
-      }
-    }
+    let templateContent = extractTemplateContent(templateInfo.node.template, sourceFile);
 
     // Process template if we have signal expressions
     if (templateInfo.expressions.length > 0) {
@@ -452,20 +406,8 @@ const transformComponentSource = (source: string, filePath: string): string | nu
 
   // Process css template literals (replace css`...` with `...`)
   const visitCss = (node: ts.Node) => {
-    if (ts.isTaggedTemplateExpression(node) && ts.isIdentifier(node.tag) && node.tag.text === 'css') {
-      const template = node.template;
-      let cssContent = '';
-
-      if (ts.isNoSubstitutionTemplateLiteral(template)) {
-        cssContent = template.text;
-      } else if (ts.isTemplateExpression(template)) {
-        cssContent = template.head.text;
-        for (const span of template.templateSpans) {
-          cssContent += '${' + span.expression.getText(sourceFile) + '}';
-          cssContent += span.literal.text;
-        }
-      }
-
+    if (ts.isTaggedTemplateExpression(node) && isCssTemplate(node)) {
+      const cssContent = extractTemplateContent(node.template, sourceFile);
       edits.push({
         start: node.getStart(sourceFile),
         end: node.getEnd(),
@@ -515,13 +457,12 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     }
   }
 
-  // Apply all edits
-  let result = applySourceEdits(source, edits);
+  // Apply all edits using shared utility (H2)
+  let result = applyEdits(source, edits);
 
   // Inject static template and initBindings into class
   // We do this after other edits since positions change
   if (classBodyStart !== null) {
-    // Re-parse to get accurate positions after edits
     const injectedCode = staticTemplateCode + initBindingsFunction;
 
     // Use regex for this final injection since positions have shifted
@@ -529,9 +470,6 @@ const transformComponentSource = (source: string, filePath: string): string | nu
       return match + injectedCode;
     });
   }
-
-  // Replace any remaining html` with just `
-  result = result.replace(/html`/g, '`');
 
   return result;
 };
@@ -541,35 +479,55 @@ const transformComponentSource = (source: string, filePath: string): string | nu
 // ============================================================================
 
 /**
- * Main plugin that compiles reactive bindings at build time
- * Uses TypeScript AST for reliable source analysis and transformation
+ * Reactive Binding Plugin - Compiles signal bindings at build time
+ *
+ * ## What it does:
+ * Transforms reactive signal expressions in templates into efficient DOM bindings.
+ *
+ * ## Transformation Example:
+ * ```typescript
+ * // INPUT:
+ * html`<span style="color: ${this.color()}">${this.count()}</span>`
+ *
+ * // OUTPUT (template):
+ * `<span id="r0" style="color: red">0</span>`
+ *
+ * // OUTPUT (bindings):
+ * __bindStyle(this.shadowRoot, this.color, 'r0', 'color');
+ * __bindText(this.shadowRoot, this.count, 'r0');
+ * ```
  */
 export const ReactiveBindingPlugin: Plugin = {
-  name: 'reactive-binding-plugin',
+  name: NAME,
   setup(build) {
     build.onLoad({ filter: /\.ts$/ }, async (args) => {
-      // Skip scripts folder
-      if (args.path.includes('scripts')) {
+      // Skip non-source folders (D2 - early returns)
+      if (args.path.includes('scripts') || args.path.includes('node_modules')) {
         return undefined;
       }
 
       const source = await fs.promises.readFile(args.path, 'utf8');
 
-      // Quick check if this file has Component class and html template
-      if (!source.includes('extends Component') || !source.includes('html`')) {
+      // Quick checks before expensive AST parsing (D2)
+      if (!extendsComponent(source) || !hasHtmlTemplates(source)) {
         return undefined;
       }
 
-      const transformed = transformComponentSource(source, args.path);
+      try {
+        const transformed = transformComponentSource(source, args.path);
 
-      if (transformed === null) {
+        if (transformed === null) {
+          return undefined;
+        }
+
+        return {
+          contents: transformed,
+          loader: 'ts',
+        };
+      } catch (error) {
+        logger.error(NAME, `Error processing ${args.path}`, error);
         return undefined;
       }
-
-      return {
-        contents: transformed,
-        loader: 'ts',
-      };
     });
   },
 };

@@ -1,9 +1,11 @@
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
-import { Metafile } from 'esbuild';
+import { Metafile, Plugin } from 'esbuild';
 import { assetsInputDir, assetsOutputDir, distDir, inputHTMLFilePath, outputHTMLFilePath, serve } from '../config.js';
-import { consoleColors } from '../utils/index.js';
+import { consoleColors, PLUGIN_NAME, sourceCache } from '../utils/index.js';
+
+const NAME = PLUGIN_NAME.POST_BUILD;
 
 let totalBundleSizeInBytes = 0;
 const fileSizeLog: { fileName: string; sizeInBytes: number }[] = [];
@@ -11,35 +13,48 @@ const fileSizeLog: { fileName: string; sizeInBytes: number }[] = [];
 const serverPort = 4200;
 let serverStarted = false;
 
-export const PostBuildPlugin: { name: string; setup: (build: any) => void } = {
-  name: 'post-build-plugin',
+/**
+ * Post Build Plugin - Handles post-build tasks
+ *
+ * ## What it does:
+ * 1. Cleans and recreates dist directory
+ * 2. Copies assets (static files, images, etc.)
+ * 3. Updates index.html with hashed JS filenames
+ * 4. Prints bundle size report
+ * 5. Starts dev server (if in serve mode)
+ */
+export const PostBuildPlugin: Plugin = {
+  name: NAME,
   setup(build) {
     // Clean dist directory before each build
-    build.onStart(() => {
+    build.onStart(async () => {
+      // Clear source cache between builds
+      sourceCache.clear();
+
       if (fs.existsSync(distDir)) {
-        fs.rmSync(distDir, { recursive: true });
+        await fs.promises.rm(distDir, { recursive: true });
       }
-      fs.mkdirSync(distDir, { recursive: true });
+      await fs.promises.mkdir(distDir, { recursive: true });
     });
 
-    build.onEnd((result: { metafile?: Metafile }) => {
+    build.onEnd(async (result: { metafile?: Metafile }) => {
       totalBundleSizeInBytes = 0;
 
       if (serve) {
         watchAndRecursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
       } else {
-        recursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
+        await recursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
       }
 
       if (result.metafile) {
-        processMetafileAndUpdateHTML(result.metafile);
+        await processMetafileAndUpdateHTML(result.metafile);
       }
     });
   },
 };
 
 // METAFILE PROCESSING ----------------------------------------------------------------------------------------------------------------------------
-const processMetafileAndUpdateHTML = (metafile: Metafile): void => {
+const processMetafileAndUpdateHTML = async (metafile: Metafile): Promise<void> => {
   const outputs = metafile.outputs;
   let hashedIndexJSFileName = '';
   let hashedRouterJSFileName = '';
@@ -61,7 +76,7 @@ const processMetafileAndUpdateHTML = (metafile: Metafile): void => {
     }
   }
 
-  copyIndexHTMLIntoDistAndStartServer(hashedIndexJSFileName, hashedRouterJSFileName);
+  await copyIndexHTMLIntoDistAndStartServer(hashedIndexJSFileName, hashedRouterJSFileName);
 };
 
 const getSizeColor = (sizeInBytes: number, maxSize: number): string => {
@@ -85,36 +100,34 @@ const printAllFileSizes = (): void => {
 };
 
 // HTML PROCESSING --------------------------------------------------------------------------------------------------------------------------------
-const copyIndexHTMLIntoDistAndStartServer = (hashedIndexJSFileName: string, hashedRouterJSFileName: string): void => {
+const copyIndexHTMLIntoDistAndStartServer = async (hashedIndexJSFileName: string, hashedRouterJSFileName: string): Promise<void> => {
   const indexJSFilePlaceholderText = 'INDEX_JS_FILE_PLACEHOLDER';
   const routerJSFilePlaceholderText = 'ROUTER_JS_FILE_PLACEHOLDER';
 
-  fs.readFile(inputHTMLFilePath, 'utf8', (readErr, data) => {
-    if (readErr) throw readErr;
+  // B3: Convert to async/await
+  const data = await fs.promises.readFile(inputHTMLFilePath, 'utf8');
 
-    let updatedData = data.replace(indexJSFilePlaceholderText, hashedIndexJSFileName).replace(routerJSFilePlaceholderText, hashedRouterJSFileName);
+  const updatedData = data.replace(indexJSFilePlaceholderText, hashedIndexJSFileName).replace(routerJSFilePlaceholderText, hashedRouterJSFileName);
 
-    fs.writeFile(outputHTMLFilePath, updatedData, 'utf8', (writeErr) => {
-      if (writeErr) throw writeErr;
+  await fs.promises.writeFile(outputHTMLFilePath, updatedData, 'utf8');
 
-      const sizeInBytes = Buffer.byteLength(updatedData, 'utf8');
-      totalBundleSizeInBytes += sizeInBytes;
-      fileSizeLog.push({ fileName: 'index.html', sizeInBytes });
+  const sizeInBytes = Buffer.byteLength(updatedData, 'utf8');
+  totalBundleSizeInBytes += sizeInBytes;
+  fileSizeLog.push({ fileName: 'index.html', sizeInBytes });
 
-      const totalSizeInKilobytes = totalBundleSizeInBytes / 1024;
+  const totalSizeInKilobytes = totalBundleSizeInBytes / 1024;
 
-      printAllFileSizes();
-      console.info(consoleColors.green, `=== TOTAL BUNDLE SIZE: ${totalBundleSizeInBytes.toFixed(2)} B ===`);
-      console.info(consoleColors.green, `=== TOTAL BUNDLE SIZE: ${totalSizeInKilobytes.toFixed(2)} KB ===`);
-      console.info('');
+  // D3: Batch console output
+  printAllFileSizes();
+  console.info(consoleColors.green, `=== TOTAL BUNDLE SIZE: ${totalBundleSizeInBytes.toFixed(2)} B ===`);
+  console.info(consoleColors.green, `=== TOTAL BUNDLE SIZE: ${totalSizeInKilobytes.toFixed(2)} KB ===`);
+  console.info('');
 
-      fileSizeLog.length = 0;
+  fileSizeLog.length = 0;
 
-      if (serve && !serverStarted) {
-        startServer();
-      }
-    });
-  });
+  if (serve && !serverStarted) {
+    startServer();
+  }
 };
 
 // SERVER FUNCTIONS ------------------------------------------------------------------------------------------------------------------------------
@@ -164,20 +177,25 @@ const getContentType = (url: string): string => {
   }
 };
 
-const recursivelyCopyAssetsIntoDist = (src: string, dest: string): void => {
-  fs.mkdirSync(dest, { recursive: true });
+// B3: Convert to async/await
+const recursivelyCopyAssetsIntoDist = async (src: string, dest: string): Promise<void> => {
+  await fs.promises.mkdir(dest, { recursive: true });
 
-  const entries = fs.readdirSync(src, { withFileTypes: true });
+  try {
+    const entries = await fs.promises.readdir(src, { withFileTypes: true });
 
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
 
-    if (entry.isDirectory()) {
-      recursivelyCopyAssetsIntoDist(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
+      if (entry.isDirectory()) {
+        await recursivelyCopyAssetsIntoDist(srcPath, destPath);
+      } else {
+        await fs.promises.copyFile(srcPath, destPath);
+      }
     }
+  } catch {
+    // Source directory might not exist
   }
 };
 
