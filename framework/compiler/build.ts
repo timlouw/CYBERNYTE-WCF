@@ -63,10 +63,14 @@ const ProdConfig: BuildOptions = {
   console.info(consoleColors.blue, `Running ${environment} build...`);
 
   const buildConfig = isProd ? ProdConfig : DevConfig;
+  const startTime = performance.now();
 
   try {
     if (!serve) {
       await build(buildConfig);
+      const endTime = performance.now();
+      const buildTime = (endTime - startTime).toFixed(2);
+      console.info(consoleColors.green, `\n⏱️  Build completed in ${buildTime}ms`);
     } else {
       const ctx = await context(buildConfig);
       await ctx.watch({}).then(() => console.info(consoleColors.blue, 'Watching for changes...'));

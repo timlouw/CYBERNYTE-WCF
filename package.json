@@ -14,6 +14,7 @@
     "@types/bun": "^1.2.15",
     "esbuild": "^0.27.1",
     "husky": "^9.1.7",
+    "lighthouse": "^13.0.1",
     "typescript": "^5.9.3"
   }
 }
