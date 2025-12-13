@@ -96,14 +96,7 @@ const findSignalInitializers = (sourceFile: ts.SourceFile): Map<string, string |
   const initializers = new Map<string, string | number | boolean>();
 
   const visit = (node: ts.Node) => {
-    if (
-      ts.isPropertyDeclaration(node) &&
-      node.name &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      ts.isCallExpression(node.initializer) &&
-      isSignalCall(node.initializer)
-    ) {
+    if (ts.isPropertyDeclaration(node) && node.name && ts.isIdentifier(node.name) && node.initializer && ts.isCallExpression(node.initializer) && isSignalCall(node.initializer)) {
       const args = node.initializer.arguments;
       if (args.length > 0) {
         const value = extractStaticValue(args[0]);
@@ -270,10 +263,7 @@ const determineBindingType = (beforeExpr: string): { propertyType: 'style' | 'at
 /**
  * Find the enclosing element for an expression and determine where to inject ID
  */
-const findEnclosingElement = (
-  htmlContent: string,
-  exprPosition: number,
-): { tagStart: number; tagNameEnd: number; tagName: string } | null => {
+const findEnclosingElement = (htmlContent: string, exprPosition: number): { tagStart: number; tagNameEnd: number; tagName: string } | null => {
   // Find all opening tags before the expression position
   const tagRegex = /<(\w[\w-]*)\s*/g;
   let lastUnclosedTag: { tagStart: number; tagNameEnd: number; tagName: string } | null = null;
@@ -449,10 +439,7 @@ const generateUpdatedImport = (importInfo: ImportInfo, requiredBindFunctions: st
  * Apply source transformations using position-based edits
  * This approach is more reliable than multiple regex replacements
  */
-const applySourceEdits = (
-  source: string,
-  edits: Array<{ start: number; end: number; replacement: string }>,
-): string => {
+const applySourceEdits = (source: string, edits: Array<{ start: number; end: number; replacement: string }>): string => {
   // Sort edits in reverse order to maintain positions
   const sortedEdits = [...edits].sort((a, b) => b.start - a.start);
 
