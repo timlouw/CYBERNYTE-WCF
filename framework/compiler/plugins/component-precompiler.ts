@@ -3,7 +3,7 @@ import path from 'path';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
 import vm from 'vm';
-import { generateComponentHTML } from '../../runtime/services/component-html.js';
+import { generateComponentHTML } from '../../runtime/dom/component-html.js';
 
 interface ComponentDefinition {
   name: string;

@@ -1,4 +1,4 @@
-import { Component, registerComponent } from '../../../framework/runtime/services/index.js';
+import { Component, registerComponent } from '../../../framework/runtime/dom/shadow-dom.js';
 import { MyElementComponent } from '../components/test.js';
 
 export default registerComponent(

@@ -1,4 +1,4 @@
-import { Component, registerComponent } from '../../../framework/runtime/services/index.js';
+import { Component, registerComponent } from '../../../framework/runtime/dom/shadow-dom.js';
 
 export default registerComponent(
   { selector: 'ui-404-page', type: 'page' },

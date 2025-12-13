@@ -8,7 +8,7 @@
  * This is the key to true CTFE: the SAME function runs at compile-time and runtime.
  */
 
-export interface ComponentHTMLConfig {
+interface ComponentHTMLConfig {
   selector: string;
   props: Record<string, any>;
 }

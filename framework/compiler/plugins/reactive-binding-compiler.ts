@@ -113,15 +113,16 @@ const findSignalInitializers = (sourceFile: ts.SourceFile): Map<string, string |
 };
 
 /**
- * Find import declarations that import from services
+ * Find import declarations that import from shadow-dom (Component, registerComponent)
+ * These imports will be updated to include bind functions from dom/index
  */
 const findServicesImport = (sourceFile: ts.SourceFile): ImportInfo | null => {
   for (const statement of sourceFile.statements) {
     if (ts.isImportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
       const specifier = statement.moduleSpecifier.text;
 
-      // Match paths ending with services/index.js or services/index
-      if (specifier.includes('services/index')) {
+      // Match paths ending with shadow-dom.js or dom/index.js (framework DOM imports)
+      if (specifier.includes('shadow-dom') || specifier.includes('dom/index')) {
         const namedImports: string[] = [];
 
         if (statement.importClause?.namedBindings && ts.isNamedImports(statement.importClause.namedBindings)) {
@@ -134,9 +135,12 @@ const findServicesImport = (sourceFile: ts.SourceFile): ImportInfo | null => {
         const fullText = statement.moduleSpecifier.getFullText(sourceFile);
         const quoteChar = fullText.includes("'") ? "'" : '"';
 
+        // If importing from shadow-dom.js, redirect to dom/index.js which exports all bind functions
+        const normalizedSpecifier = specifier.includes('shadow-dom') ? specifier.replace('shadow-dom.js', 'index.js').replace('shadow-dom', 'index') : specifier;
+
         return {
           namedImports,
-          moduleSpecifier: specifier,
+          moduleSpecifier: normalizedSpecifier,
           start: statement.getStart(sourceFile),
           end: statement.getEnd(),
           quoteChar,
