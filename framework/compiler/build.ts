@@ -1,6 +1,6 @@
 import { build, BuildOptions, context } from 'esbuild';
 import { tscTypeCheckingPlugin } from './plugins/tsc-type-checker.js';
-import { customHashingPlugin } from './plugins/file-hash-generator.js';
+import { postBuildProcessorPlugin } from './plugins/post-build-processor.js';
 import { componentPrecompilerPlugin } from './plugins/component-precompiler.js';
 import { reactiveBindingCompilerPlugin } from './plugins/reactive-binding-compiler.js';
 import { routesPrecompilerPlugin } from './plugins/routes-precompiler.js';
@@ -32,7 +32,7 @@ process.on('uncaughtException', (err) => {
 });
 
 // ESBUILD CONFIGS ---------------------------------------------------------------------------------------------------------------------------------
-const SharedConfig: BuildOptions = {
+const BaseConfig: BuildOptions = {
   entryPoints: entryPoints,
   bundle: true,
   platform: 'browser',
@@ -42,18 +42,21 @@ const SharedConfig: BuildOptions = {
   splitting: true,
   format: 'esm',
   sourcemap: false,
-  write: false,
-  plugins: [tscTypeCheckingPlugin, customHashingPlugin, componentPrecompilerPlugin, routesPrecompilerPlugin, registerComponentStripperPlugin, reactiveBindingCompilerPlugin],
+  write: true,
+  metafile: true,
+  entryNames: '[name]-[hash]',
+  chunkNames: '[name]-[hash]',
+  plugins: [tscTypeCheckingPlugin, postBuildProcessorPlugin, componentPrecompilerPlugin, routesPrecompilerPlugin, registerComponentStripperPlugin, reactiveBindingCompilerPlugin],
 };
 
 const DevConfig: BuildOptions = {
   minify: false,
-  ...SharedConfig,
+  ...BaseConfig,
 };
 
 const ProdConfig: BuildOptions = {
   minify: true,
-  ...SharedConfig,
+  ...BaseConfig,
 };
 
 // MAIN EXECUTION AND SERVER -------------------------------------------------------------------------------------------------------------------------------------------

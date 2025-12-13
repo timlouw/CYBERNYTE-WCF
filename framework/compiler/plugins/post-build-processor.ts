@@ -1,26 +1,8 @@
 import fs from 'fs';
 import http from 'http';
-import zlib from 'zlib';
-import crypto from 'crypto';
 import path from 'path';
-import {
-  assetsInputDir,
-  assetsOutputDir,
-  distDir,
-  greenOutput,
-  indexCSSFileName,
-  indexJSFileName,
-  inputHTMLFilePath,
-  isProd,
-  outputHTMLFilePath,
-  routerJSFileName,
-  serve,
-  yellowOutput,
-} from '../shared-config.js';
-
-let hashedIndexJSFileName = '';
-let hashedIndexCSSFileName = '';
-let hashedRouterJSFileName = '';
+import { Metafile } from 'esbuild';
+import { assetsInputDir, assetsOutputDir, distDir, greenOutput, inputHTMLFilePath, outputHTMLFilePath, serve, yellowOutput } from '../shared-config.js';
 
 let totalBundleSizeInBytes = 0;
 const fileSizeLog: { fileName: string; sizeInBytes: number }[] = [];
@@ -30,12 +12,19 @@ const hotReloadListener = "<script>new EventSource('/hot-reload').onmessage = (e
 let serverStarted = false;
 let clients: { id: number; res: http.ServerResponse }[] = [];
 
-export const customHashingPlugin: { name: string; setup: (build: any) => void } = {
-  name: 'custom-hashing-plugin',
+export const postBuildProcessorPlugin: { name: string; setup: (build: any) => void } = {
+  name: 'post-build-plugin',
   setup(build) {
-    build.onEnd((result: { outputFiles?: { path: string; contents: Buffer }[] }) => {
+    // Clean dist directory before each build
+    build.onStart(() => {
+      if (fs.existsSync(distDir)) {
+        fs.rmSync(distDir, { recursive: true });
+      }
+      fs.mkdirSync(distDir, { recursive: true });
+    });
+
+    build.onEnd((result: { metafile?: Metafile }) => {
       totalBundleSizeInBytes = 0;
-      initDistDirectory();
 
       if (serve) {
         watchAndRecursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
@@ -43,56 +32,45 @@ export const customHashingPlugin: { name: string; setup: (build: any) => void } 
         recursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
       }
 
-      if (result.outputFiles && result.outputFiles.length > 0) {
-        processAllFiles(result.outputFiles);
-        copyIndexHTMLIntoDistAndStartServer();
+      if (result.metafile) {
+        processMetafileAndUpdateHTML(result.metafile);
       }
     });
   },
 };
 
-// HASHING FUNCTIONS ------------------------------------------------------------------------------------------------------------------------------
-const writeHashedFileToDistFolder = (file: { contents: Buffer }, hashedFileName: string): void => {
-  if (isProd && serve) {
-    zlib.gzip(file.contents, { level: zlib.constants.Z_BEST_COMPRESSION }, (err, buffer) => {
-      if (err) {
-        console.error('Error gzipping file:', err);
-        return;
+// METAFILE PROCESSING ----------------------------------------------------------------------------------------------------------------------------
+const processMetafileAndUpdateHTML = (metafile: Metafile): void => {
+  const outputs = metafile.outputs;
+  let hashedIndexJSFileName = '';
+  let hashedRouterJSFileName = '';
+
+  // Find hashed filenames from metafile and collect sizes
+  for (const [outputPath, info] of Object.entries(outputs)) {
+    const fileName = path.basename(outputPath);
+    const sizeInBytes = info.bytes;
+    totalBundleSizeInBytes += sizeInBytes;
+    fileSizeLog.push({ fileName, sizeInBytes });
+
+    // Match entry points by their source
+    if (info.entryPoint) {
+      if (info.entryPoint.includes('index.ts')) {
+        hashedIndexJSFileName = fileName;
+      } else if (info.entryPoint.includes('router.ts')) {
+        hashedRouterJSFileName = fileName;
       }
-
-      writeFile(hashedFileName, buffer, true);
-    });
-  } else {
-    writeFile(hashedFileName, file.contents, false);
+    }
   }
-};
 
-const writeFile = (fileName: string, fileData: Buffer, gzipped: boolean): void => {
-  collectFileSize(fileName, fileData);
-
-  fs.writeFile(`${distDir}/${fileName}${gzipped ? '.gz' : ''}`, fileData, 'utf8', (writeErr) => {
-    if (writeErr) throw writeErr;
-  });
-};
-
-const collectFileSize = (fileName: string, fileData: Buffer): void => {
-  const sizeInBytes = Buffer.byteLength(fileData, 'utf8');
-  totalBundleSizeInBytes += sizeInBytes;
-  fileSizeLog.push({ fileName, sizeInBytes });
+  copyIndexHTMLIntoDistAndStartServer(hashedIndexJSFileName, hashedRouterJSFileName);
 };
 
 const getSizeColor = (sizeInBytes: number, maxSize: number): string => {
   const ratio = sizeInBytes / maxSize;
-  // Gradient from green (low) -> yellow (mid) -> red (high)
-  if (ratio < 0.33) {
-    return '\x1b[32m'; // Green
-  } else if (ratio < 0.66) {
-    return '\x1b[33m'; // Yellow
-  } else if (ratio < 0.85) {
-    return '\x1b[38;5;208m'; // Orange
-  } else {
-    return '\x1b[31m'; // Red
-  }
+  if (ratio < 0.33) return '\x1b[32m';
+  if (ratio < 0.66) return '\x1b[33m';
+  if (ratio < 0.85) return '\x1b[38;5;208m';
+  return '\x1b[31m';
 };
 
 const printAllFileSizes = (): void => {
@@ -107,53 +85,8 @@ const printAllFileSizes = (): void => {
   }
 };
 
-const generateQuickHash = (fileData: Buffer): string => {
-  return crypto.createHash('md5').update(fileData).digest('base64url');
-};
-
-const hashEntryPointFileName = (file: { path: string; contents: Buffer }): string => {
-  const fileName = path.basename(file.path);
-  const fileNameWithoutExtension = fileName.slice(0, fileName.lastIndexOf('.'));
-  const fileNameExtension = fileName.slice(fileName.lastIndexOf('.'));
-
-  return `${fileNameWithoutExtension}-${generateQuickHash(file.contents)}${fileNameExtension}`;
-};
-
-// File processing functions ------------------------------------------------------------------------------------------------------------------------
-const processAllFiles = (files: { path: string; contents: Buffer }[]): void => {
-  for (const file of files) {
-    if (!file.path.includes('.css') || file.path.includes(indexCSSFileName)) {
-      switch (true) {
-        case file.path.includes(indexJSFileName):
-          hashedIndexJSFileName = hashEntryPointFileName(file);
-          writeHashedFileToDistFolder(file, hashedIndexJSFileName);
-          break;
-        case file.path.includes(indexCSSFileName):
-          hashedIndexCSSFileName = hashEntryPointFileName(file);
-          writeHashedFileToDistFolder(file, hashedIndexCSSFileName);
-          break;
-        case file.path.includes(routerJSFileName):
-          hashedRouterJSFileName = hashEntryPointFileName(file);
-          writeHashedFileToDistFolder(file, hashedRouterJSFileName);
-          break;
-        default:
-          const fileNameWithHash = path.basename(file.path);
-          writeHashedFileToDistFolder(file, fileNameWithHash);
-      }
-    }
-  }
-};
-
-// DIRECTORY MANIPULATION FUNCTIONS -----------------------------------------------------------------------------------------------------------------
-const initDistDirectory = (): void => {
-  if (fs.existsSync(distDir)) {
-    fs.rmSync(distDir, { recursive: true });
-  }
-  fs.mkdirSync(distDir, { recursive: true });
-};
-
-const copyIndexHTMLIntoDistAndStartServer = (): void => {
-  const indexCSSFilePlaceholderText = 'INDEX_CSS_FILE_PLACEHOLDER';
+// HTML PROCESSING --------------------------------------------------------------------------------------------------------------------------------
+const copyIndexHTMLIntoDistAndStartServer = (hashedIndexJSFileName: string, hashedRouterJSFileName: string): void => {
   const indexJSFilePlaceholderText = 'INDEX_JS_FILE_PLACEHOLDER';
   const routerJSFilePlaceholderText = 'ROUTER_JS_FILE_PLACEHOLDER';
   const hotReloadPlaceHolderText = 'HOT_RELOAD_PLACEHOLDER';
@@ -162,7 +95,6 @@ const copyIndexHTMLIntoDistAndStartServer = (): void => {
     if (readErr) throw readErr;
 
     let updatedData = data
-      .replace(indexCSSFilePlaceholderText, hashedIndexCSSFileName)
       .replace(indexJSFilePlaceholderText, hashedIndexJSFileName)
       .replace(routerJSFilePlaceholderText, hashedRouterJSFileName)
       .replace(hotReloadPlaceHolderText, serve ? hotReloadListener : '');
@@ -181,7 +113,6 @@ const copyIndexHTMLIntoDistAndStartServer = (): void => {
       console.info(greenOutput, `=== TOTAL BUNDLE SIZE: ${totalSizeInKilobytes.toFixed(2)} KB ===`);
       console.info('');
 
-      // Clear the log for next build
       fileSizeLog.length = 0;
 
       if (serve) {
@@ -211,18 +142,11 @@ const setupSSE = (server: http.Server): void => {
     } else {
       const requestedUrl = req.url || '/';
       const requestedPath = path.join(distDir, requestedUrl);
-      const gzippedFilePath = requestedPath + '.gz';
       const indexPath = path.join(distDir, 'index.html');
       const hasFileExtension = path.extname(requestedUrl).length > 0;
 
-      // Serve gzipped file if it exists
-      if (fs.existsSync(gzippedFilePath) && fs.statSync(gzippedFilePath).isFile()) {
-        res.setHeader('Content-Encoding', 'gzip');
-        res.setHeader('Content-Type', getContentType(requestedUrl));
-        fs.createReadStream(gzippedFilePath).pipe(res);
-      }
       // Serve static file if it exists and is a file
-      else if (fs.existsSync(requestedPath) && fs.statSync(requestedPath).isFile()) {
+      if (fs.existsSync(requestedPath) && fs.statSync(requestedPath).isFile()) {
         res.setHeader('Content-Type', getContentType(requestedUrl));
         fs.createReadStream(requestedPath).pipe(res);
       }

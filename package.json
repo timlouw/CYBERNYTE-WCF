@@ -1,21 +1,19 @@
 {
   "type": "module",
   "scripts": {
-    "start": "tsx framework/compiler/build.ts dev client serve",
-    "start-prod": "tsx framework/compiler/build.ts prod client serve",
-    "build": "tsx framework/compiler/build.ts dev client",
-    "build-prod": "tsx framework/compiler/build.ts prod client",
-    "benchmark": "node lighthouse.js --serve",
-    "format": "prettier --write \"**/*.{ts,json,html}\"",
-    "format:check": "prettier --check \"**/*.{ts,json,html}\"",
-    "prepare": "husky install"
+    "start": "bun framework/compiler/build.ts dev client serve",
+    "start-prod": "bun framework/compiler/build.ts prod client serve",
+    "build": "bun framework/compiler/build.ts dev client",
+    "build-prod": "bun framework/compiler/build.ts prod client",
+    "benchmark": "bun lighthouse.js --serve",
+    "format": "bunx --bun prettier --write \"**/*.{ts,json,html}\"",
+    "format:check": "bunx --bun prettier --check \"**/*.{ts,json,html}\"",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@types/node": "^25.0.1",
     "esbuild": "^0.27.1",
     "husky": "^9.1.7",
-    "prettier": "^3.7.4",
-    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }
