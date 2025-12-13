@@ -1,40 +1,8 @@
 import fs from 'fs';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface ReactiveBinding {
-  signalName: string;
-  elementSelector: string;
-  propertyType: 'style' | 'attribute' | 'innerText';
-  property?: string;
-}
-
-interface SignalExpression {
-  signalName: string;
-  fullExpression: string;
-  start: number;
-  end: number;
-}
-
-interface TemplateEdit {
-  type: 'remove' | 'replace' | 'insertId';
-  start: number;
-  end: number;
-  content?: string;
-  elementId?: string;
-}
-
-interface ImportInfo {
-  namedImports: string[];
-  moduleSpecifier: string;
-  start: number;
-  end: number;
-  quoteChar: string;
-}
+import type { ReactiveBinding, SignalExpression, TemplateEdit, ImportInfo } from '../types.js';
+import { findClassExtending, applySourceEdits } from '../utils/index.js';
 
 // ============================================================================
 // AST Utilities
@@ -209,27 +177,7 @@ const findHtmlTemplates = (
  * Find the class that extends Component
  */
 const findComponentClass = (sourceFile: ts.SourceFile): ts.ClassExpression | ts.ClassDeclaration | null => {
-  let componentClass: ts.ClassExpression | ts.ClassDeclaration | null = null;
-
-  const visit = (node: ts.Node) => {
-    if ((ts.isClassDeclaration(node) || ts.isClassExpression(node)) && node.heritageClauses) {
-      for (const clause of node.heritageClauses) {
-        if (clause.token === ts.SyntaxKind.ExtendsKeyword) {
-          for (const type of clause.types) {
-            if (ts.isIdentifier(type.expression) && type.expression.text === 'Component') {
-              componentClass = node;
-            }
-          }
-        }
-      }
-    }
-    if (!componentClass) {
-      ts.forEachChild(node, visit);
-    }
-  };
-
-  visit(sourceFile);
-  return componentClass;
+  return findClassExtending(sourceFile, 'Component');
 };
 
 // ============================================================================
@@ -440,22 +388,6 @@ const generateUpdatedImport = (importInfo: ImportInfo, requiredBindFunctions: st
 // ============================================================================
 
 /**
- * Apply source transformations using position-based edits
- * This approach is more reliable than multiple regex replacements
- */
-const applySourceEdits = (source: string, edits: Array<{ start: number; end: number; replacement: string }>): string => {
-  // Sort edits in reverse order to maintain positions
-  const sortedEdits = [...edits].sort((a, b) => b.start - a.start);
-
-  let result = source;
-  for (const edit of sortedEdits) {
-    result = result.substring(0, edit.start) + edit.replacement + result.substring(edit.end);
-  }
-
-  return result;
-};
-
-/**
  * Process the source file and return transformed source
  */
 const transformComponentSource = (source: string, filePath: string): string | null => {
@@ -612,8 +544,8 @@ const transformComponentSource = (source: string, filePath: string): string | nu
  * Main plugin that compiles reactive bindings at build time
  * Uses TypeScript AST for reliable source analysis and transformation
  */
-export const reactiveBindingCompilerPlugin: Plugin = {
-  name: 'reactive-binding-compiler-plugin',
+export const ReactiveBindingPlugin: Plugin = {
+  name: 'reactive-binding-plugin',
   setup(build) {
     build.onLoad({ filter: /\.ts$/ }, async (args) => {
       // Skip scripts folder

@@ -1,17 +1,18 @@
 import { exec } from 'child_process';
 import { Plugin } from 'esbuild';
-import { blueOutput } from '../shared-config.js';
+import { consoleColors } from '../utils/index.js';
 
-let isTscRunning = false;
+let isRunning = false;
 
-const typeChecker = (): void => {
-  if (isTscRunning) return;
-  isTscRunning = true;
-  console.info(blueOutput, 'TypeScript type checking running...');
+const runTypeCheck = (): void => {
+  if (isRunning) return;
+  isRunning = true;
+
+  console.info(consoleColors.blue, 'TypeScript type checking running...');
   console.info('');
 
   exec('tsc --noEmit', (error, stdout) => {
-    isTscRunning = false;
+    isRunning = false;
 
     if (error) {
       console.error(`TypeScript type checking failed: ${error}`);
@@ -22,9 +23,9 @@ const typeChecker = (): void => {
   });
 };
 
-export const tscTypeCheckingPlugin: Plugin = {
-  name: 'tsc-type-checking-plugin',
+export const TypeCheckPlugin: Plugin = {
+  name: 'type-check-plugin',
   setup(build) {
-    build.onStart(() => typeChecker());
+    build.onStart(() => runTypeCheck());
   },
 };

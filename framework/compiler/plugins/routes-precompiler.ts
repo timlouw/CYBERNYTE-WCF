@@ -1,63 +1,8 @@
-import fs from 'fs';
 import path from 'path';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
-
-interface PageSelectorInfo {
-  importPath: string;
-  selector: string;
-}
-
-/**
- * Extracts the selector from a page file by parsing its registerComponent call.
- * Pages use registerComponent with type: 'page' and export default.
- */
-const extractPageSelector = async (pagePath: string): Promise<string | null> => {
-  try {
-    const source = await fs.promises.readFile(pagePath, 'utf8');
-    const sourceFile = ts.createSourceFile(pagePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-
-    let selector: string | null = null;
-
-    const visit = (node: ts.Node) => {
-      // Find: export default registerComponent(...)
-      if (ts.isExportAssignment(node) && !node.isExportEquals) {
-        const expr = node.expression;
-        if (ts.isCallExpression(expr)) {
-          const callee = expr.expression;
-
-          // Check if it's registerComponent call
-          if (ts.isIdentifier(callee) && callee.text === 'registerComponent') {
-            // Extract the config object (first argument)
-            if (expr.arguments.length > 0) {
-              const configArg = expr.arguments[0];
-              if (ts.isObjectLiteralExpression(configArg)) {
-                for (const prop of configArg.properties) {
-                  if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
-                    if (prop.name.text === 'selector' && ts.isStringLiteral(prop.initializer)) {
-                      selector = prop.initializer.text;
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      if (!selector) {
-        ts.forEachChild(node, visit);
-      }
-    };
-
-    visit(sourceFile);
-    return selector;
-  } catch (err) {
-    console.error(`[Routes CTFE] Error reading page file: ${pagePath}`, err);
-    return null;
-  }
-};
+import type { PageSelectorInfo } from '../types.js';
+import { createSourceFile, extractPageSelector, safeReadFile } from '../utils/index.js';
 
 /**
  * Resolves the page file path from the import statement in routes.
@@ -79,7 +24,7 @@ const resolvePagePath = (importPath: string, routesFilePath: string): string => 
 /**
  * Extracts all dynamic imports from the routes file and their corresponding selectors.
  */
-const extractRouteImports = async (source: string, sourceFile: ts.SourceFile, routesFilePath: string): Promise<Map<string, PageSelectorInfo>> => {
+const extractRouteImports = async (_source: string, sourceFile: ts.SourceFile, routesFilePath: string): Promise<Map<string, PageSelectorInfo>> => {
   const pageSelectors = new Map<string, PageSelectorInfo>();
 
   const visit = async (node: ts.Node) => {
@@ -145,7 +90,7 @@ const extractRouteImports = async (source: string, sourceFile: ts.SourceFile, ro
  * This allows the router to use innerHTML directly without needing
  * to call module.default to get the component tag.
  */
-export const routesPrecompilerPlugin: Plugin = {
+export const RoutesPrecompilerPlugin: Plugin = {
   name: 'routes-precompiler-plugin',
   setup(build) {
     build.onLoad({ filter: /routes\.ts$/ }, async (args) => {
@@ -155,8 +100,10 @@ export const routesPrecompilerPlugin: Plugin = {
           return undefined;
         }
 
-        const source = await fs.promises.readFile(args.path, 'utf8');
-        const sourceFile = ts.createSourceFile(args.path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+        const source = await safeReadFile(args.path);
+        if (!source) return undefined;
+
+        const sourceFile = createSourceFile(args.path, source);
 
         // Extract all page selectors from dynamic imports
         const pageSelectors = await extractRouteImports(source, sourceFile, args.path);

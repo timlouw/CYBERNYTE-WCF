@@ -4,12 +4,8 @@ import { Plugin } from 'esbuild';
 import ts from 'typescript';
 import vm from 'vm';
 import { generateComponentHTML } from '../../runtime/dom/component-html.js';
-
-interface ComponentDefinition {
-  name: string;
-  selector: string;
-  filePath: string;
-}
+import type { ComponentDefinition } from '../types.js';
+import { createSourceFile, extractRegisterComponentConfig, isRegisterComponentCall } from '../utils/index.js';
 
 /**
  * Extracts component definitions from source files using TypeScript AST.
@@ -17,48 +13,25 @@ interface ComponentDefinition {
  */
 const extractComponentDefinitions = (source: string, filePath: string): ComponentDefinition[] => {
   const definitions: ComponentDefinition[] = [];
-
-  const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const sourceFile = createSourceFile(filePath, source);
 
   const visit = (node: ts.Node) => {
-    // Find: export const Name = registerComponent(...)
     if (ts.isVariableStatement(node)) {
       const hasExport = node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
       if (hasExport) {
         for (const decl of node.declarationList.declarations) {
-          if (ts.isIdentifier(decl.name) && decl.initializer && ts.isCallExpression(decl.initializer)) {
-            const callExpr = decl.initializer;
-            const callee = callExpr.expression;
+          if (ts.isIdentifier(decl.name) && decl.initializer && ts.isCallExpression(decl.initializer) && isRegisterComponentCall(decl.initializer)) {
+            const configArg = decl.initializer.arguments[0];
+            if (configArg && ts.isObjectLiteralExpression(configArg)) {
+              const { selector, type } = extractRegisterComponentConfig(configArg);
 
-            // Check if it's registerComponent call
-            if (ts.isIdentifier(callee) && callee.text === 'registerComponent') {
-              // Extract the config object (first argument)
-              if (callExpr.arguments.length > 0) {
-                const configArg = callExpr.arguments[0];
-                if (ts.isObjectLiteralExpression(configArg)) {
-                  let selector: string | null = null;
-                  let type: string | null = null;
-
-                  for (const prop of configArg.properties) {
-                    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
-                      if (prop.name.text === 'selector' && ts.isStringLiteral(prop.initializer)) {
-                        selector = prop.initializer.text;
-                      }
-                      if (prop.name.text === 'type' && ts.isStringLiteral(prop.initializer)) {
-                        type = prop.initializer.text;
-                      }
-                    }
-                  }
-
-                  // Only register 'component' type (not 'page')
-                  if (selector && type === 'component') {
-                    definitions.push({
-                      name: decl.name.text,
-                      selector,
-                      filePath,
-                    });
-                  }
-                }
+              // Only register 'component' type (not 'page')
+              if (selector && type === 'component') {
+                definitions.push({
+                  name: decl.name.text,
+                  selector,
+                  filePath,
+                });
               }
             }
           }
@@ -360,7 +333,7 @@ const findComponentCallsCTFE = (
  * - Fake: Duplicate the generateComponentHTML logic
  * - True: Use the same function (or identical implementation verified by tests)
  */
-export const componentPrecompilerPlugin: Plugin = {
+export const ComponentPrecompilerPlugin: Plugin = {
   name: 'component-precompiler-plugin',
   setup(build) {
     const componentDefinitions = new Map<string, ComponentDefinition>();

@@ -1,6 +1,8 @@
 import fs from 'fs';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
+import type { CodeRemoval } from '../types.js';
+import { createSourceFile, applyCodeRemovals } from '../utils/index.js';
 
 /**
  * Register Component Return Stripper Plugin
@@ -24,19 +26,17 @@ import ts from 'typescript';
  * This effectively makes registerComponent a void function at runtime while
  * preserving the return types in the source for development type-checking.
  */
-export const registerComponentStripperPlugin: Plugin = {
+export const RegisterComponentStripperPlugin: Plugin = {
   name: 'register-component-stripper-plugin',
   setup(build) {
     // Handle shadow-dom.ts - strip the registerComponent return code
     build.onLoad({ filter: /shadow-dom\.ts$/ }, async (args) => {
       try {
         const source = await fs.promises.readFile(args.path, 'utf8');
-        const sourceFile = ts.createSourceFile(args.path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-
-        let modifiedSource = source;
+        const sourceFile = createSourceFile(args.path, source);
 
         // Track positions to remove (process from bottom to top)
-        const removals: Array<{ start: number; end: number; description: string }> = [];
+        const removals: CodeRemoval[] = [];
 
         const visit = (node: ts.Node) => {
           // Find the registerComponent function declaration
@@ -126,17 +126,10 @@ export const registerComponentStripperPlugin: Plugin = {
           return undefined;
         }
 
-        // Sort removals by start position descending (process from bottom to top)
-        removals.sort((a, b) => b.start - a.start);
-
         console.log(`[RegisterComponent Stripper] Removing ${removals.length} code block(s) from shadow-dom.ts`);
 
-        for (const removal of removals) {
-          modifiedSource = modifiedSource.substring(0, removal.start) + modifiedSource.substring(removal.end);
-        }
-
         return {
-          contents: modifiedSource,
+          contents: applyCodeRemovals(source, removals),
           loader: 'ts',
         };
       } catch (err) {
@@ -149,10 +142,9 @@ export const registerComponentStripperPlugin: Plugin = {
     build.onLoad({ filter: /services[/\\]index\.ts$/ }, async (args) => {
       try {
         const source = await fs.promises.readFile(args.path, 'utf8');
-        const sourceFile = ts.createSourceFile(args.path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+        const sourceFile = createSourceFile(args.path, source);
 
-        let modifiedSource = source;
-        const removals: Array<{ start: number; end: number; description: string }> = [];
+        const removals: CodeRemoval[] = [];
 
         const visit = (node: ts.Node) => {
           // Find: export * from './component-html.js'
@@ -175,17 +167,10 @@ export const registerComponentStripperPlugin: Plugin = {
           return undefined;
         }
 
-        // Sort removals by start position descending
-        removals.sort((a, b) => b.start - a.start);
-
         console.log(`[RegisterComponent Stripper] Removing ${removals.length} export(s) from services/index.ts`);
 
-        for (const removal of removals) {
-          modifiedSource = modifiedSource.substring(0, removal.start) + modifiedSource.substring(removal.end);
-        }
-
         return {
-          contents: modifiedSource,
+          contents: applyCodeRemovals(source, removals),
           loader: 'ts',
         };
       } catch (err) {

@@ -2,7 +2,8 @@ import fs from 'fs';
 import http from 'http';
 import path from 'path';
 import { Metafile } from 'esbuild';
-import { assetsInputDir, assetsOutputDir, distDir, greenOutput, inputHTMLFilePath, outputHTMLFilePath, serve, yellowOutput } from '../shared-config.js';
+import { assetsInputDir, assetsOutputDir, distDir, inputHTMLFilePath, outputHTMLFilePath, serve } from '../config.js';
+import { consoleColors } from '../utils/index.js';
 
 let totalBundleSizeInBytes = 0;
 const fileSizeLog: { fileName: string; sizeInBytes: number }[] = [];
@@ -12,7 +13,7 @@ const hotReloadListener = "<script>new EventSource('/hot-reload').onmessage = (e
 let serverStarted = false;
 let clients: { id: number; res: http.ServerResponse }[] = [];
 
-export const postBuildProcessorPlugin: { name: string; setup: (build: any) => void } = {
+export const PostBuildPlugin: { name: string; setup: (build: any) => void } = {
   name: 'post-build-plugin',
   setup(build) {
     // Clean dist directory before each build
@@ -67,16 +68,16 @@ const processMetafileAndUpdateHTML = (metafile: Metafile): void => {
 
 const getSizeColor = (sizeInBytes: number, maxSize: number): string => {
   const ratio = sizeInBytes / maxSize;
-  if (ratio < 0.33) return '\x1b[32m';
-  if (ratio < 0.66) return '\x1b[33m';
-  if (ratio < 0.85) return '\x1b[38;5;208m';
-  return '\x1b[31m';
+  if (ratio < 0.33) return '\x1b[32m'; // green
+  if (ratio < 0.66) return '\x1b[33m'; // yellow
+  if (ratio < 0.85) return '\x1b[38;5;208m'; // orange
+  return '\x1b[31m'; // red
 };
 
 const printAllFileSizes = (): void => {
   const maxSize = Math.max(...fileSizeLog.map((f) => f.sizeInBytes));
   const cyanColor = '\x1b[36m';
-  const reset = '\x1b[0m';
+  const { reset } = consoleColors;
 
   for (const { fileName, sizeInBytes } of fileSizeLog) {
     const sizeInKilobytes = sizeInBytes / 1024;
@@ -109,8 +110,8 @@ const copyIndexHTMLIntoDistAndStartServer = (hashedIndexJSFileName: string, hash
       const totalSizeInKilobytes = totalBundleSizeInBytes / 1024;
 
       printAllFileSizes();
-      console.info(greenOutput, `=== TOTAL BUNDLE SIZE: ${totalBundleSizeInBytes.toFixed(2)} B ===`);
-      console.info(greenOutput, `=== TOTAL BUNDLE SIZE: ${totalSizeInKilobytes.toFixed(2)} KB ===`);
+      console.info(consoleColors.green, `=== TOTAL BUNDLE SIZE: ${totalBundleSizeInBytes.toFixed(2)} B ===`);
+      console.info(consoleColors.green, `=== TOTAL BUNDLE SIZE: ${totalSizeInKilobytes.toFixed(2)} KB ===`);
       console.info('');
 
       fileSizeLog.length = 0;
@@ -128,7 +129,7 @@ const startServer = (): void => {
   const url = `http://localhost:${serverPort}/`;
   setupSSE(server);
   server.listen(serverPort, () => {
-    console.info(yellowOutput, `Server running at ${url}`);
+    console.info(consoleColors.yellow, `Server running at ${url}`);
     console.info('');
     console.info('');
     serverStarted = true;
