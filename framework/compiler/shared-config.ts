@@ -6,7 +6,7 @@ export type AssetsRootDirectory = 'apps' | 'dist';
 // SCRIPT ARGUMENTS -----------------------------------------------------------------------------------------------------------------------------
 export const environment: Environment = (process.argv[2] as any) ?? 'dev';
 export const application: Application = (process.argv[3] as any) ?? 'client';
-export const serve: string = (process.argv[4] as any) ?? '';
+export const serve: boolean = (process.argv[4] as any) ? true : false;
 export const isProd: boolean = environment === 'prod';
 
 // LITERALs -----------------------------------------------------------------------------------------------------------------------------

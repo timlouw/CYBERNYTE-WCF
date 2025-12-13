@@ -46,13 +46,13 @@ const SharedConfig: BuildOptions = {
   plugins: [tscTypeCheckingPlugin, customHashingPlugin, componentPrecompilerPlugin, routesPrecompilerPlugin, registerComponentStripperPlugin, reactiveBindingCompilerPlugin],
 };
 
-const ProdConfig: BuildOptions = {
-  minify: true,
+const DevConfig: BuildOptions = {
+  minify: false,
   ...SharedConfig,
 };
 
-const DevConfig: BuildOptions = {
-  minify: false,
+const ProdConfig: BuildOptions = {
+  minify: true,
   ...SharedConfig,
 };
 
@@ -63,7 +63,7 @@ const DevConfig: BuildOptions = {
   const buildConfig = isProd ? ProdConfig : DevConfig;
 
   try {
-    if (isProd && !serve) {
+    if (!serve) {
       await build(buildConfig);
     } else {
       const ctx = await context(buildConfig);

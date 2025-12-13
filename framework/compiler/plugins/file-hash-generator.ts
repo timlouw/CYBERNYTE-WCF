@@ -39,10 +39,10 @@ export const customHashingPlugin: { name: string; setup: (build: any) => void } 
       totalBundleSizeInBytes = 0;
       initDistDirectory();
 
-      if (isProd) {
-        recursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
-      } else {
+      if (serve) {
         watchAndRecursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
+      } else {
+        recursivelyCopyAssetsIntoDist(assetsInputDir, assetsOutputDir);
       }
 
       if (result.outputFiles && result.outputFiles.length > 0) {
@@ -167,7 +167,7 @@ const copyIndexHTMLIntoDistAndStartServer = (): void => {
       .replace(indexCSSFilePlaceholderText, hashedIndexCSSFileName)
       .replace(indexJSFilePlaceholderText, hashedIndexJSFileName)
       .replace(routerJSFilePlaceholderText, hashedRouterJSFileName)
-      .replace(hotReloadPlaceHolderText, serve === 'serve' ? hotReloadListener : '');
+      .replace(hotReloadPlaceHolderText, serve ? hotReloadListener : '');
 
     fs.writeFile(outputHTMLFilePath, updatedData, 'utf8', (writeErr) => {
       if (writeErr) throw writeErr;
