@@ -2,7 +2,6 @@ import fs from 'fs';
 import http from 'http';
 import zlib from 'zlib';
 // import { exec } from 'child_process';
-import serveStatic from 'serve-static';
 import murmurhash from 'murmurhash';
 import path from 'path';
 import {
@@ -225,38 +224,36 @@ const openLocalhostInBrowser = (url: string): void => {
 };
 
 const setupSSE = (server: http.Server): void => {
-  const app = serveStatic(distDir, { index: ['index.html'] });
   server.on('request', (req, res) => {
     if (req.url === '/hot-reload') {
       handleSSEConnection(req, res);
     } else {
-      const gzippedFilePath = path.join(distDir, req.url || '') + '.gz';
-      if (fs.existsSync(gzippedFilePath)) {
-        res.setHeader('Content-Encoding', 'gzip');
-        res.setHeader('Content-Type', getContentType(req.url || ''));
-        fs.createReadStream(gzippedFilePath).pipe(res);
-      } else {
-        // SPA fallback: serve index.html for routes that don't match static files
-        // This allows client-side router to handle the navigation
-        const requestedPath = path.join(distDir, req.url || '');
-        const hasFileExtension = path.extname(req.url || '').length > 0;
+      const requestedUrl = req.url || '/';
+      const requestedPath = path.join(distDir, requestedUrl);
+      const gzippedFilePath = requestedPath + '.gz';
+      const indexPath = path.join(distDir, 'index.html');
+      const hasFileExtension = path.extname(requestedUrl).length > 0;
 
-        if (!hasFileExtension && !fs.existsSync(requestedPath)) {
-          // Route request - serve index.html and let client-side router handle it
-          const indexPath = path.join(distDir, 'index.html');
-          res.setHeader('Content-Type', 'text/html');
-          fs.createReadStream(indexPath).pipe(res);
-        } else {
-          app(req, res, (err?: Error & { statusCode?: number }) => {
-            if (err) {
-              res.statusCode = err.statusCode || 500;
-              res.end(err.message || 'Internal Server Error');
-            } else {
-              res.statusCode = 404;
-              res.end('Not Found');
-            }
-          });
-        }
+      // Serve gzipped file if it exists
+      if (fs.existsSync(gzippedFilePath) && fs.statSync(gzippedFilePath).isFile()) {
+        res.setHeader('Content-Encoding', 'gzip');
+        res.setHeader('Content-Type', getContentType(requestedUrl));
+        fs.createReadStream(gzippedFilePath).pipe(res);
+      }
+      // Serve static file if it exists and is a file
+      else if (fs.existsSync(requestedPath) && fs.statSync(requestedPath).isFile()) {
+        res.setHeader('Content-Type', getContentType(requestedUrl));
+        fs.createReadStream(requestedPath).pipe(res);
+      }
+      // SPA fallback: serve index.html for routes without file extensions (client-side routing)
+      else if (!hasFileExtension) {
+        res.setHeader('Content-Type', 'text/html');
+        fs.createReadStream(indexPath).pipe(res);
+      }
+      // 404 for missing files with extensions
+      else {
+        res.statusCode = 404;
+        res.end('Not Found');
       }
     }
   });

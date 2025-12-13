@@ -12,12 +12,10 @@
   },
   "devDependencies": {
     "@types/node": "^25.0.1",
-    "@types/serve-static": "^2.2.0",
     "esbuild": "^0.27.1",
     "husky": "^9.1.7",
     "murmurhash": "^2.0.1",
     "prettier": "^3.7.4",
-    "serve-static": "^2.2.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
