@@ -26,6 +26,7 @@ let hashedIndexCSSFileName = '';
 let hashedRouterJSFileName = '';
 
 let totalBundleSizeInBytes = 0;
+const fileSizeLog: { fileName: string; sizeInBytes: number }[] = [];
 
 const serverPort = 4200;
 const hotReloadListener = "<script>new EventSource('/hot-reload').onmessage = (event) => location.reload();</script>";
@@ -70,18 +71,43 @@ const writeHashedFileToDistFolder = (file: { contents: Buffer }, hashedFileName:
 };
 
 const writeFile = (fileName: string, fileData: Buffer, gzipped: boolean): void => {
-  logFileNameAndSize(fileName, fileData);
+  collectFileSize(fileName, fileData);
 
   fs.writeFile(`${distDir}/${fileName}${gzipped ? '.gz' : ''}`, fileData, 'utf8', (writeErr) => {
     if (writeErr) throw writeErr;
   });
 };
 
-const logFileNameAndSize = (fileName: string, fileData: Buffer): void => {
+const collectFileSize = (fileName: string, fileData: Buffer): void => {
   const sizeInBytes = Buffer.byteLength(fileData, 'utf8');
   totalBundleSizeInBytes += sizeInBytes;
-  const sizeInKilobytes = sizeInBytes / 1024;
-  console.info(fileName, greenOutput, ` Size: ${sizeInKilobytes.toFixed(2)} KB`);
+  fileSizeLog.push({ fileName, sizeInBytes });
+};
+
+const getSizeColor = (sizeInBytes: number, maxSize: number): string => {
+  const ratio = sizeInBytes / maxSize;
+  // Gradient from green (low) -> yellow (mid) -> red (high)
+  if (ratio < 0.33) {
+    return '\x1b[32m'; // Green
+  } else if (ratio < 0.66) {
+    return '\x1b[33m'; // Yellow
+  } else if (ratio < 0.85) {
+    return '\x1b[38;5;208m'; // Orange
+  } else {
+    return '\x1b[31m'; // Red
+  }
+};
+
+const printAllFileSizes = (): void => {
+  const maxSize = Math.max(...fileSizeLog.map((f) => f.sizeInBytes));
+  const cyanColor = '\x1b[36m';
+  const reset = '\x1b[0m';
+
+  for (const { fileName, sizeInBytes } of fileSizeLog) {
+    const sizeInKilobytes = sizeInBytes / 1024;
+    const sizeColor = getSizeColor(sizeInBytes, maxSize);
+    console.info(`${cyanColor}${fileName}${reset}  ${sizeColor}Size: ${sizeInKilobytes.toFixed(2)} KB${reset}`);
+  }
 };
 
 const generateQuickHash = (fileData: Buffer): string => {
@@ -148,14 +174,18 @@ const copyIndexHTMLIntoDistAndStartServer = (): void => {
       if (writeErr) throw writeErr;
 
       const sizeInBytes = Buffer.byteLength(updatedData, 'utf8');
-      const sizeInKilobytes = sizeInBytes / 1024;
       totalBundleSizeInBytes += sizeInBytes;
+      fileSizeLog.push({ fileName: 'index.html', sizeInBytes });
+
       const totalSizeInKilobytes = totalBundleSizeInBytes / 1024;
 
-      console.info('index.html', greenOutput, ` Size: ${sizeInKilobytes.toFixed(2)} KB`);
+      printAllFileSizes();
       console.info(greenOutput, `=== TOTAL BUNDLE SIZE: ${totalBundleSizeInBytes.toFixed(2)} B ===`);
       console.info(greenOutput, `=== TOTAL BUNDLE SIZE: ${totalSizeInKilobytes.toFixed(2)} KB ===`);
       console.info('');
+
+      // Clear the log for next build
+      fileSizeLog.length = 0;
 
       if (serve) {
         serverStarted ? sendReloadMessage() : startServer();
