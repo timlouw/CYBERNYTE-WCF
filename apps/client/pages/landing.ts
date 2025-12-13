@@ -1,4 +1,4 @@
-import { Component, registerComponent } from '@services';
+import { Component, registerComponent } from '../../../framework/runtime/services/index.js';
 import { MyElementComponent } from '../components/test.js';
 
 export default registerComponent(

@@ -1,5 +1,5 @@
 import { signal } from '../../../framework/runtime/models/index.js';
-import { Component, registerComponent } from '@services';
+import { Component, registerComponent } from '../../../framework/runtime/services/index.js';
 
 interface MyElementProps {
   color: string;

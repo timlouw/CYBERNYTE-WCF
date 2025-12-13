@@ -2,6 +2,10 @@ import fs from 'fs';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
 
+// ============================================================================
+// Types
+// ============================================================================
+
 interface ReactiveBinding {
   signalName: string;
   elementSelector: string;
@@ -9,24 +13,244 @@ interface ReactiveBinding {
   property?: string;
 }
 
-interface ParsedBinding {
-  signalExpression: string;
+interface SignalExpression {
   signalName: string;
+  fullExpression: string;
+  start: number;
+  end: number;
 }
 
+interface TemplateEdit {
+  type: 'remove' | 'replace' | 'insertId';
+  start: number;
+  end: number;
+  content?: string;
+  elementId?: string;
+}
+
+interface ImportInfo {
+  namedImports: string[];
+  moduleSpecifier: string;
+  start: number;
+  end: number;
+  quoteChar: string;
+}
+
+// ============================================================================
+// AST Utilities
+// ============================================================================
+
 /**
- * Extracts signal name from an expression like "this.color()" or "this.text()"
+ * Check if a call expression is a signal call: signal(...)
  */
-const extractSignalName = (expression: string): string | null => {
-  // Match patterns like: this.signalName() or this.signalName
-  const match = expression.match(/this\.(\w+)\s*\(\s*\)/);
-  return match ? match[1] : null;
+const isSignalCall = (node: ts.CallExpression): boolean => {
+  return ts.isIdentifier(node.expression) && node.expression.text === 'signal';
 };
 
 /**
- * Determines the binding type based on context in the HTML
+ * Check if a call expression is a signal getter: this.signalName()
  */
-const determineBindingType = (beforeExpr: string, _afterExpr: string): { propertyType: 'style' | 'attribute' | 'innerText'; property?: string } => {
+const isSignalGetter = (node: ts.CallExpression, sourceFile: ts.SourceFile): string | null => {
+  if (
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
+    ts.isIdentifier(node.expression.name) &&
+    node.arguments.length === 0
+  ) {
+    return node.expression.name.text;
+  }
+  return null;
+};
+
+/**
+ * Extract static value from signal initializer if possible
+ */
+const extractStaticValue = (arg: ts.Expression): string | number | boolean | null => {
+  if (ts.isStringLiteral(arg)) {
+    return arg.text;
+  }
+  if (ts.isNumericLiteral(arg)) {
+    return Number(arg.text);
+  }
+  if (arg.kind === ts.SyntaxKind.TrueKeyword) {
+    return true;
+  }
+  if (arg.kind === ts.SyntaxKind.FalseKeyword) {
+    return false;
+  }
+  // Simple string concatenation: "a" + "b"
+  if (ts.isBinaryExpression(arg) && arg.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const left = extractStaticValue(arg.left);
+    const right = extractStaticValue(arg.right);
+    if (typeof left === 'string' && typeof right === 'string') {
+      return left + right;
+    }
+  }
+  return null;
+};
+
+/**
+ * Find all signal property declarations and their initial values
+ */
+const findSignalInitializers = (sourceFile: ts.SourceFile): Map<string, string | number | boolean> => {
+  const initializers = new Map<string, string | number | boolean>();
+
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isPropertyDeclaration(node) &&
+      node.name &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      isSignalCall(node.initializer)
+    ) {
+      const args = node.initializer.arguments;
+      if (args.length > 0) {
+        const value = extractStaticValue(args[0]);
+        if (value !== null) {
+          initializers.set(node.name.text, value);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return initializers;
+};
+
+/**
+ * Find import declarations that import from services
+ */
+const findServicesImport = (sourceFile: ts.SourceFile): ImportInfo | null => {
+  for (const statement of sourceFile.statements) {
+    if (ts.isImportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+      const specifier = statement.moduleSpecifier.text;
+
+      // Match paths ending with services/index.js or services/index
+      if (specifier.includes('services/index')) {
+        const namedImports: string[] = [];
+
+        if (statement.importClause?.namedBindings && ts.isNamedImports(statement.importClause.namedBindings)) {
+          for (const element of statement.importClause.namedBindings.elements) {
+            namedImports.push(element.name.text);
+          }
+        }
+
+        // Detect quote character from source
+        const fullText = statement.moduleSpecifier.getFullText(sourceFile);
+        const quoteChar = fullText.includes("'") ? "'" : '"';
+
+        return {
+          namedImports,
+          moduleSpecifier: specifier,
+          start: statement.getStart(sourceFile),
+          end: statement.getEnd(),
+          quoteChar,
+        };
+      }
+    }
+  }
+  return null;
+};
+
+/**
+ * Find all html tagged template literals and extract signal expressions
+ */
+const findHtmlTemplates = (
+  sourceFile: ts.SourceFile,
+): Array<{
+  node: ts.TaggedTemplateExpression;
+  expressions: SignalExpression[];
+  templateStart: number;
+  templateEnd: number;
+}> => {
+  const templates: Array<{
+    node: ts.TaggedTemplateExpression;
+    expressions: SignalExpression[];
+    templateStart: number;
+    templateEnd: number;
+  }> = [];
+
+  const visit = (node: ts.Node) => {
+    if (ts.isTaggedTemplateExpression(node) && ts.isIdentifier(node.tag) && node.tag.text === 'html') {
+      const template = node.template;
+      const expressions: SignalExpression[] = [];
+
+      if (ts.isTemplateExpression(template)) {
+        for (const span of template.templateSpans) {
+          if (ts.isCallExpression(span.expression)) {
+            const signalName = isSignalGetter(span.expression, sourceFile);
+            if (signalName) {
+              expressions.push({
+                signalName,
+                fullExpression: span.expression.getText(sourceFile),
+                start: span.expression.getStart(sourceFile),
+                end: span.expression.getEnd(),
+              });
+            }
+          }
+        }
+      }
+
+      templates.push({
+        node,
+        expressions,
+        templateStart: node.getStart(sourceFile),
+        templateEnd: node.getEnd(),
+      });
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return templates;
+};
+
+/**
+ * Find the class that extends Component
+ */
+const findComponentClass = (sourceFile: ts.SourceFile): ts.ClassExpression | ts.ClassDeclaration | null => {
+  let componentClass: ts.ClassExpression | ts.ClassDeclaration | null = null;
+
+  const visit = (node: ts.Node) => {
+    if ((ts.isClassDeclaration(node) || ts.isClassExpression(node)) && node.heritageClauses) {
+      for (const clause of node.heritageClauses) {
+        if (clause.token === ts.SyntaxKind.ExtendsKeyword) {
+          for (const type of clause.types) {
+            if (ts.isIdentifier(type.expression) && type.expression.text === 'Component') {
+              componentClass = node;
+            }
+          }
+        }
+      }
+    }
+    if (!componentClass) {
+      ts.forEachChild(node, visit);
+    }
+  };
+
+  visit(sourceFile);
+  return componentClass;
+};
+
+// ============================================================================
+// HTML Template Processing
+// ============================================================================
+
+/**
+ * Converts CSS property name to camelCase for direct style property access
+ * e.g., "background-color" -> "backgroundColor"
+ */
+const toCamelCase = (str: string): string => {
+  return str.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+};
+
+/**
+ * Determines the binding type based on the context before the expression in HTML
+ */
+const determineBindingType = (beforeExpr: string): { propertyType: 'style' | 'attribute' | 'innerText'; property?: string } => {
   // Check if it's a style property: style="property: ${...}"
   const styleMatch = beforeExpr.match(/style\s*=\s*["'][^"']*?([\w-]+)\s*:\s*$/);
   if (styleMatch) {
@@ -44,104 +268,135 @@ const determineBindingType = (beforeExpr: string, _afterExpr: string): { propert
 };
 
 /**
- * Uses TypeScript AST to find template expressions within html tagged template literals
+ * Find the enclosing element for an expression and determine where to inject ID
  */
-const findReactiveExpressionsInRender = (sourceFile: ts.SourceFile): { expressions: ParsedBinding[]; renderNode: ts.MethodDeclaration | ts.PropertyDeclaration | null } => {
-  const expressions: ParsedBinding[] = [];
-  let renderNode: ts.MethodDeclaration | ts.PropertyDeclaration | null = null;
+const findEnclosingElement = (
+  htmlContent: string,
+  exprPosition: number,
+): { tagStart: number; tagNameEnd: number; tagName: string } | null => {
+  // Find all opening tags before the expression position
+  const tagRegex = /<(\w[\w-]*)\s*/g;
+  let lastUnclosedTag: { tagStart: number; tagNameEnd: number; tagName: string } | null = null;
+  let match: RegExpExecArray | null;
 
-  const visit = (node: ts.Node) => {
-    // Find the render method/property
-    if ((ts.isMethodDeclaration(node) || ts.isPropertyDeclaration(node)) && node.name && ts.isIdentifier(node.name) && node.name.text === 'render') {
-      renderNode = node;
+  while ((match = tagRegex.exec(htmlContent)) !== null) {
+    if (match.index >= exprPosition) break;
+
+    const tagName = match[1];
+    const tagStart = match.index;
+    const tagNameEnd = match.index + 1 + tagName.length; // After "<tagName"
+
+    // Check if this tag is closed before our expression
+    const afterTag = htmlContent.substring(tagNameEnd, exprPosition);
+    const closingTagPattern = new RegExp(`</${tagName}\\s*>`, 'i');
+
+    if (!closingTagPattern.test(afterTag)) {
+      lastUnclosedTag = { tagStart, tagNameEnd, tagName };
     }
+  }
 
-    // Find tagged template expressions with 'html' tag
-    if (ts.isTaggedTemplateExpression(node)) {
-      const tag = node.tag;
-      if (ts.isIdentifier(tag) && tag.text === 'html') {
-        const template = node.template;
-
-        if (ts.isTemplateExpression(template)) {
-          // Process each template span (the ${...} parts)
-          template.templateSpans.forEach((span) => {
-            const expr = span.expression;
-            const exprText = expr.getText(sourceFile);
-
-            // Check if this is a signal call (this.signalName())
-            const signalName = extractSignalName(exprText);
-            if (signalName) {
-              expressions.push({
-                signalExpression: exprText,
-                signalName: signalName,
-              });
-            }
-          });
-        }
-      }
-    }
-
-    ts.forEachChild(node, visit);
-  };
-
-  visit(sourceFile);
-  return { expressions, renderNode };
+  return lastUnclosedTag;
 };
 
 /**
- * Finds signal initializers that are static literals or simple binary expressions
+ * Process HTML template content and generate bindings
  */
-const findSignalInitializers = (sourceFile: ts.SourceFile): Map<string, string | number | boolean> => {
-  const initializers = new Map<string, string | number | boolean>();
+const processHtmlTemplate = (
+  templateContent: string,
+  signalInitializers: Map<string, string | number | boolean>,
+  startingId: number,
+): { processedContent: string; bindings: ReactiveBinding[]; nextId: number } => {
+  const bindings: ReactiveBinding[] = [];
+  let idCounter = startingId;
 
-  const visit = (node: ts.Node) => {
-    if (ts.isPropertyDeclaration(node) && node.name && ts.isIdentifier(node.name) && node.initializer) {
-      if (ts.isCallExpression(node.initializer) && ts.isIdentifier(node.initializer.expression) && node.initializer.expression.text === 'signal') {
-        const args = node.initializer.arguments;
-        if (args.length > 0) {
-          const arg = args[0];
-          if (ts.isStringLiteral(arg)) {
-            initializers.set(node.name.text, arg.text);
-          } else if (ts.isNumericLiteral(arg)) {
-            initializers.set(node.name.text, Number(arg.text));
-          } else if (arg.kind === ts.SyntaxKind.TrueKeyword) {
-            initializers.set(node.name.text, true);
-          } else if (arg.kind === ts.SyntaxKind.FalseKeyword) {
-            initializers.set(node.name.text, false);
-          } else if (ts.isBinaryExpression(arg)) {
-            // Simple concatenation support
-            const left = arg.left;
-            const right = arg.right;
-            if (ts.isStringLiteral(left) && ts.isStringLiteral(right) && arg.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-              initializers.set(node.name.text, left.text + right.text);
-            }
-          }
-        }
+  // Find all ${this.signalName()} expressions
+  const exprRegex = /\$\{(this\.(\w+)\(\))\}/g;
+  const edits: TemplateEdit[] = [];
+  const idInsertions: Map<number, string> = new Map();
+  let match: RegExpExecArray | null;
+
+  while ((match = exprRegex.exec(templateContent)) !== null) {
+    const fullExpr = match[0];
+    const signalName = match[2];
+    const exprStart = match.index;
+    const exprEnd = exprStart + fullExpr.length;
+
+    const initialValue = signalInitializers.get(signalName);
+    const beforeExpr = templateContent.substring(0, exprStart);
+
+    // Find enclosing element
+    const enclosingElement = findEnclosingElement(templateContent, exprStart);
+
+    if (enclosingElement) {
+      const elementId = `r${idCounter}`;
+      const { propertyType, property } = determineBindingType(beforeExpr);
+
+      // Check if we already have an ID insertion for this position
+      if (!idInsertions.has(enclosingElement.tagNameEnd)) {
+        idInsertions.set(enclosingElement.tagNameEnd, elementId);
+      }
+
+      bindings.push({
+        signalName,
+        elementSelector: idInsertions.get(enclosingElement.tagNameEnd)!,
+        propertyType,
+        property,
+      });
+
+      idCounter++;
+    }
+
+    // Add edit to remove or replace the expression
+    if (initialValue !== undefined) {
+      edits.push({ type: 'replace', start: exprStart, end: exprEnd, content: String(initialValue) });
+    } else {
+      edits.push({ type: 'remove', start: exprStart, end: exprEnd });
+    }
+  }
+
+  // Add ID insertion edits
+  for (const [position, elementId] of idInsertions) {
+    edits.push({ type: 'insertId', start: position, end: position, elementId });
+  }
+
+  // Apply edits in reverse order to maintain positions
+  edits.sort((a, b) => b.start - a.start);
+
+  let result = templateContent;
+  const processedPositions = new Set<number>();
+
+  for (const edit of edits) {
+    if (edit.type === 'remove') {
+      result = result.substring(0, edit.start) + result.substring(edit.end);
+    } else if (edit.type === 'replace') {
+      result = result.substring(0, edit.start) + edit.content! + result.substring(edit.end);
+    } else if (edit.type === 'insertId' && !processedPositions.has(edit.start)) {
+      // Check if there's already an id attribute
+      const afterPosition = result.substring(edit.start);
+      const nextCloseBracket = afterPosition.indexOf('>');
+      const tagContent = afterPosition.substring(0, nextCloseBracket);
+
+      if (!tagContent.includes(' id="r')) {
+        result = result.substring(0, edit.start) + ` id="${edit.elementId}"` + result.substring(edit.start);
+        processedPositions.add(edit.start);
       }
     }
-    ts.forEachChild(node, visit);
-  };
+  }
 
-  visit(sourceFile);
-  return initializers;
+  return { processedContent: result, bindings, nextId: idCounter };
 };
 
-/**
- * Converts CSS property name to camelCase for direct style property access
- * e.g., "background-color" -> "backgroundColor"
- */
-const toCamelCase = (str: string): string => {
-  return str.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
-};
+// ============================================================================
+// Code Generation
+// ============================================================================
 
 /**
  * Generates the compiled bindings code that will be injected
- * Uses specialized binding functions - no runtime type checks
  */
 const generateBindingsCode = (bindings: ReactiveBinding[]): string => {
   if (bindings.length === 0) return '';
 
-  const bindingCalls = bindings
+  return bindings
     .map((binding) => {
       if (binding.propertyType === 'style') {
         const prop = toCamelCase(binding.property!);
@@ -153,19 +408,222 @@ const generateBindingsCode = (bindings: ReactiveBinding[]): string => {
       }
     })
     .join('\n');
-
-  return bindingCalls;
 };
 
 /**
+ * Generate static template code
+ */
+const generateStaticTemplate = (content: string): string => {
+  const escapedContent = content.replace(/`/g, '\\`');
+  return `
+  static template = (() => {
+    const t = document.createElement('template');
+    t.innerHTML = \`${escapedContent}\`;
+    return t;
+  })();`;
+};
+
+/**
+ * Generate initializeBindings function
+ */
+const generateInitBindingsFunction = (bindingsCode: string): string => {
+  if (bindingsCode) {
+    return `\n\n  initializeBindings = () => {\n    // Auto-generated reactive bindings\n${bindingsCode}\n  };`;
+  }
+  return `\n\n  initializeBindings = () => {};`;
+};
+
+/**
+ * Generate updated import statement with binding functions
+ */
+const generateUpdatedImport = (importInfo: ImportInfo, requiredBindFunctions: string[]): string => {
+  const allImports = [...importInfo.namedImports, ...requiredBindFunctions];
+  return `import { ${allImports.join(', ')} } from ${importInfo.quoteChar}${importInfo.moduleSpecifier}${importInfo.quoteChar}`;
+};
+
+// ============================================================================
+// Source Transformation
+// ============================================================================
+
+/**
+ * Apply source transformations using position-based edits
+ * This approach is more reliable than multiple regex replacements
+ */
+const applySourceEdits = (
+  source: string,
+  edits: Array<{ start: number; end: number; replacement: string }>,
+): string => {
+  // Sort edits in reverse order to maintain positions
+  const sortedEdits = [...edits].sort((a, b) => b.start - a.start);
+
+  let result = source;
+  for (const edit of sortedEdits) {
+    result = result.substring(0, edit.start) + edit.replacement + result.substring(edit.end);
+  }
+
+  return result;
+};
+
+/**
+ * Process the source file and return transformed source
+ */
+const transformComponentSource = (source: string, filePath: string): string | null => {
+  // Parse source with TypeScript
+  const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+
+  // Find component class
+  const componentClass = findComponentClass(sourceFile);
+  if (!componentClass) {
+    return null;
+  }
+
+  // Find signal initializers
+  const signalInitializers = findSignalInitializers(sourceFile);
+
+  // Find services import (using AST)
+  const servicesImport = findServicesImport(sourceFile);
+
+  // Find html templates
+  const htmlTemplates = findHtmlTemplates(sourceFile);
+
+  // Collect all edits to apply
+  const edits: Array<{ start: number; end: number; replacement: string }> = [];
+  const allBindings: ReactiveBinding[] = [];
+  let idCounter = 0;
+  let lastProcessedTemplateContent = '';
+
+  // Process each html template
+  for (const templateInfo of htmlTemplates) {
+    const template = templateInfo.node.template;
+    let templateContent = '';
+
+    // Extract raw template content
+    if (ts.isNoSubstitutionTemplateLiteral(template)) {
+      templateContent = template.text;
+    } else if (ts.isTemplateExpression(template)) {
+      // Reconstruct the template content from parts
+      templateContent = template.head.text;
+      for (const span of template.templateSpans) {
+        templateContent += '${' + span.expression.getText(sourceFile) + '}';
+        templateContent += span.literal.text;
+      }
+    }
+
+    // Process template if we have signal expressions
+    if (templateInfo.expressions.length > 0) {
+      const result = processHtmlTemplate(templateContent, signalInitializers, idCounter);
+      templateContent = result.processedContent;
+      allBindings.push(...result.bindings);
+      idCounter = result.nextId;
+    }
+
+    lastProcessedTemplateContent = templateContent;
+
+    // Replace html`...` with ``
+    edits.push({
+      start: templateInfo.templateStart,
+      end: templateInfo.templateEnd,
+      replacement: '``',
+    });
+  }
+
+  // Process css template literals (replace css`...` with `...`)
+  const visitCss = (node: ts.Node) => {
+    if (ts.isTaggedTemplateExpression(node) && ts.isIdentifier(node.tag) && node.tag.text === 'css') {
+      const template = node.template;
+      let cssContent = '';
+
+      if (ts.isNoSubstitutionTemplateLiteral(template)) {
+        cssContent = template.text;
+      } else if (ts.isTemplateExpression(template)) {
+        cssContent = template.head.text;
+        for (const span of template.templateSpans) {
+          cssContent += '${' + span.expression.getText(sourceFile) + '}';
+          cssContent += span.literal.text;
+        }
+      }
+
+      edits.push({
+        start: node.getStart(sourceFile),
+        end: node.getEnd(),
+        replacement: '`' + cssContent + '`',
+      });
+    }
+    ts.forEachChild(node, visitCss);
+  };
+  visitCss(sourceFile);
+
+  // Generate code to inject
+  const bindingsCode = generateBindingsCode(allBindings);
+  const initBindingsFunction = generateInitBindingsFunction(bindingsCode);
+
+  // Generate static template if we have processed content
+  let staticTemplateCode = '';
+  if (lastProcessedTemplateContent) {
+    staticTemplateCode = generateStaticTemplate(lastProcessedTemplateContent);
+  }
+
+  // Find class body start position for injection
+  let classBodyStart: number | null = null;
+  if (componentClass.members && componentClass.members.length > 0) {
+    // Find opening brace position
+    const classStart = componentClass.getStart(sourceFile);
+    const classText = componentClass.getText(sourceFile);
+    const braceIndex = classText.indexOf('{');
+    if (braceIndex !== -1) {
+      classBodyStart = classStart + braceIndex + 1;
+    }
+  }
+
+  // Update import if we have bindings
+  if (allBindings.length > 0 && servicesImport) {
+    const requiredFunctions: string[] = [];
+    if (allBindings.some((b) => b.propertyType === 'style')) requiredFunctions.push('__bindStyle');
+    if (allBindings.some((b) => b.propertyType === 'attribute')) requiredFunctions.push('__bindAttr');
+    if (allBindings.some((b) => b.propertyType === 'innerText')) requiredFunctions.push('__bindText');
+
+    if (requiredFunctions.length > 0) {
+      const newImport = generateUpdatedImport(servicesImport, requiredFunctions);
+      edits.push({
+        start: servicesImport.start,
+        end: servicesImport.end,
+        replacement: newImport,
+      });
+    }
+  }
+
+  // Apply all edits
+  let result = applySourceEdits(source, edits);
+
+  // Inject static template and initBindings into class
+  // We do this after other edits since positions change
+  if (classBodyStart !== null) {
+    // Re-parse to get accurate positions after edits
+    const injectedCode = staticTemplateCode + initBindingsFunction;
+
+    // Use regex for this final injection since positions have shifted
+    result = result.replace(/class\s+extends\s+Component\s*\{/, (match) => {
+      return match + injectedCode;
+    });
+  }
+
+  // Replace any remaining html` with just `
+  result = result.replace(/html`/g, '`');
+
+  return result;
+};
+
+// ============================================================================
+// Plugin Export
+// ============================================================================
+
+/**
  * Main plugin that compiles reactive bindings at build time
- * Also handles unique ID generation for custom elements (merged from unique-id-generator)
+ * Uses TypeScript AST for reliable source analysis and transformation
  */
 export const reactiveBindingCompilerPlugin: Plugin = {
   name: 'reactive-binding-compiler-plugin',
   setup(build) {
-    const customElements = new Set<string>();
-
     build.onLoad({ filter: /\.ts$/ }, async (args) => {
       // Skip scripts folder
       if (args.path.includes('scripts')) {
@@ -174,204 +632,19 @@ export const reactiveBindingCompilerPlugin: Plugin = {
 
       const source = await fs.promises.readFile(args.path, 'utf8');
 
-      // Collect custom element names
-      const registerComponentRegex = /registerComponent\(\s*{[^}]*selector:\s*['"]([^'"]+)['"]/g;
-      let match: RegExpExecArray | null;
-      while ((match = registerComponentRegex.exec(source)) !== null) {
-        customElements.add(match[1]);
-      }
-
       // Quick check if this file has Component class and html template
       if (!source.includes('extends Component') || !source.includes('html`')) {
         return undefined;
       }
 
-      let modifiedSource = source;
+      const transformed = transformComponentSource(source, args.path);
 
-      // Parse the source using TypeScript AST to find reactive expressions
-      const sourceFile = ts.createSourceFile(args.path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-      const { expressions } = findReactiveExpressionsInRender(sourceFile);
-      const signalInitializers = findSignalInitializers(sourceFile);
-
-      // Process html template literals
-      const htmlTemplateRegex = /html`([\s\S]*?)`/g;
-      let htmlMatch: RegExpExecArray | null;
-      const allBindings: ReactiveBinding[] = [];
-      let reactiveIdCounter = 0;
-      let extractedTemplateContent = '';
-
-      // We need to process all html templates - reset the regex
-      htmlTemplateRegex.lastIndex = 0;
-
-      while ((htmlMatch = htmlTemplateRegex.exec(modifiedSource)) !== null) {
-        let templateContent = htmlMatch[1];
-        const originalTemplate = htmlMatch[0];
-
-        // Only process reactive bindings if we found expressions
-        if (expressions.length > 0) {
-          const exprRegex = /\$\{(this\.(\w+)\(\))\}/g;
-          let exprMatch: RegExpExecArray | null;
-
-          // Track edits: insertions and removals
-          const edits: { type: 'insert' | 'remove' | 'replace'; position: number; content?: string; length?: number; id?: number }[] = [];
-
-          while ((exprMatch = exprRegex.exec(templateContent)) !== null) {
-            const fullExpr = exprMatch[0];
-            const signalName = exprMatch[2];
-            const exprStart = exprMatch.index;
-
-            const initialValue = signalInitializers.get(signalName);
-
-            if (initialValue !== undefined) {
-              // Replace with initial value
-              edits.push({ type: 'replace', position: exprStart, length: fullExpr.length, content: String(initialValue) });
-            } else {
-              // Add removal of the expression
-              edits.push({ type: 'remove', position: exprStart, length: fullExpr.length });
-            }
-
-            // Determine context: is this in a style, attribute, or text content?
-            const beforeExpr = templateContent.substring(0, exprStart);
-            const afterExpr = templateContent.substring(exprStart + fullExpr.length);
-
-            // Find the element this expression belongs to
-            // Look backwards for the most recent unclosed tag
-            const tagOpenRegex = /<(\w+)([^>]*?)(?:>|$)/g;
-            let lastTagMatch: RegExpExecArray | null = null;
-            let tagMatch: RegExpExecArray | null;
-
-            while ((tagMatch = tagOpenRegex.exec(beforeExpr)) !== null) {
-              // Check if this tag is closed before our expression
-              const tagName = tagMatch[1];
-              const afterTag = beforeExpr.substring(tagMatch.index + tagMatch[0].length);
-              const closingTag = new RegExp(`</${tagName}>`);
-              if (!closingTag.test(afterTag)) {
-                lastTagMatch = tagMatch;
-              }
-            }
-
-            if (lastTagMatch) {
-              const { propertyType, property } = determineBindingType(beforeExpr, afterExpr);
-
-              edits.push({
-                type: 'insert',
-                position: lastTagMatch.index + lastTagMatch[1].length + 1, // After "<tagname"
-                id: reactiveIdCounter,
-              });
-
-              const elementId = `r${reactiveIdCounter}`;
-              allBindings.push({
-                signalName,
-                elementSelector: elementId,
-                propertyType,
-                property,
-              });
-
-              reactiveIdCounter++;
-            }
-          }
-
-          // Apply edits in reverse order to maintain positions
-          edits.sort((a, b) => b.position - a.position);
-
-          const processedPositions = new Set<number>();
-
-          for (const edit of edits) {
-            if (edit.type === 'remove') {
-              const before = templateContent.substring(0, edit.position);
-              const after = templateContent.substring(edit.position + edit.length!);
-              templateContent = before + after;
-            } else if (edit.type === 'replace') {
-              const before = templateContent.substring(0, edit.position);
-              const after = templateContent.substring(edit.position + edit.length!);
-              templateContent = before + edit.content! + after;
-            } else if (edit.type === 'insert') {
-              const beforeInsertion = templateContent.substring(0, edit.position);
-              const afterInsertion = templateContent.substring(edit.position);
-
-              const nextCloseBracket = afterInsertion.indexOf('>');
-              const tagContent = afterInsertion.substring(0, nextCloseBracket);
-
-              if (!tagContent.includes(' id="r') && !processedPositions.has(edit.position)) {
-                templateContent = beforeInsertion + ` id="r${edit.id}"` + afterInsertion;
-                processedPositions.add(edit.position);
-              }
-            }
-          }
-        }
-
-        extractedTemplateContent = templateContent;
-
-        // Replace the original template with empty string
-        modifiedSource = modifiedSource.replace(originalTemplate, '``');
+      if (transformed === null) {
+        return undefined;
       }
-
-      // Inject static template
-      if (extractedTemplateContent) {
-        // Escape backticks in the content
-        const escapedContent = extractedTemplateContent.replace(/`/g, '\\`');
-        const staticTemplateCode = `
-  static template = (() => {
-    const t = document.createElement('template');
-    t.innerHTML = \`${escapedContent}\`;
-    return t;
-  })();
-`;
-        const classBodyRegex = /class\s+extends\s+Component\s*{/g;
-        modifiedSource = modifiedSource.replace(classBodyRegex, (match) => {
-          return `${match}${staticTemplateCode}`;
-        });
-      }
-
-      // Process css template literals (from unique-id-generator)
-      const cssLiteralRegex = /css`([\s\S]*?)`/g;
-      let cssMatch: RegExpExecArray | null;
-
-      while ((cssMatch = cssLiteralRegex.exec(modifiedSource)) !== null) {
-        const cssContent = cssMatch[1];
-        const fullMatch = cssMatch[0];
-        const modifiedTemplateLiteral = `\`${cssContent}\``;
-        modifiedSource = modifiedSource.replace(fullMatch, modifiedTemplateLiteral);
-      }
-
-      // Replace html` with just ` (template literal)
-      modifiedSource = modifiedSource.replace(/html`/g, '`');
-
-      // Generate the initializeBindings function with reactive bindings
-      const bindingsCode = allBindings.length > 0 ? generateBindingsCode(allBindings) : '';
-
-      // Add the imports for binding functions if we have bindings
-      if (allBindings.length > 0) {
-        const importRegex = /import\s*{([^}]+)}\s*from\s*['"]@services['"]/;
-        const importMatch = importRegex.exec(modifiedSource);
-
-        if (importMatch) {
-          const existingImports = importMatch[1];
-          // Determine which binding functions are needed
-          const needsStyle = allBindings.some((b) => b.propertyType === 'style');
-          const needsAttr = allBindings.some((b) => b.propertyType === 'attribute');
-          const needsText = allBindings.some((b) => b.propertyType === 'innerText');
-
-          const bindImports = [needsStyle ? '__bindStyle' : '', needsAttr ? '__bindAttr' : '', needsText ? '__bindText' : ''].filter(Boolean).join(', ');
-
-          if (bindImports) {
-            modifiedSource = modifiedSource.replace(importMatch[0], `import {${existingImports}, ${bindImports} } from '@services'`);
-          }
-        }
-      }
-
-      // Inject the entire initializeBindings function into the class
-      const initBindingsFunction = bindingsCode
-        ? `\n\n  initializeBindings = () => {\n    // Auto-generated reactive bindings\n${bindingsCode}\n  };`
-        : `\n\n  initializeBindings = () => {};`;
-
-      const classBodyRegex = /class\s+extends\s+Component\s*{/g;
-      modifiedSource = modifiedSource.replace(classBodyRegex, (match) => {
-        return `${match}${initBindingsFunction}`;
-      });
 
       return {
-        contents: modifiedSource,
+        contents: transformed,
         loader: 'ts',
       };
     });

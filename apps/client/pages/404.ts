@@ -1,4 +1,4 @@
-import { Component, registerComponent } from '@services';
+import { Component, registerComponent } from '../../../framework/runtime/services/index.js';
 
 export default registerComponent(
   { selector: 'ui-404-page', type: 'page' },
