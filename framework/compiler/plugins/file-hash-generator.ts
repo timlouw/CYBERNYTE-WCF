@@ -1,8 +1,7 @@
 import fs from 'fs';
 import http from 'http';
 import zlib from 'zlib';
-// import { exec } from 'child_process';
-import murmurhash from 'murmurhash';
+import crypto from 'crypto';
 import path from 'path';
 import {
   assetsInputDir,
@@ -109,7 +108,7 @@ const printAllFileSizes = (): void => {
 };
 
 const generateQuickHash = (fileData: Buffer): string => {
-  return murmurhash.v3(fileData.toString(), 64).toString(16);
+  return crypto.createHash('md5').update(fileData).digest('base64url');
 };
 
 const hashEntryPointFileName = (file: { path: string; contents: Buffer }): string => {
@@ -202,25 +201,7 @@ const startServer = (): void => {
     console.info('');
     console.info('');
     serverStarted = true;
-    openLocalhostInBrowser(url);
   });
-};
-
-const openLocalhostInBrowser = (url: string): void => {
-  // switch (process.platform) {
-  //   case 'darwin': // macOS
-  //     exec(`open ${url}`);
-  //     break;
-  //   case 'win32': // Windows
-  //     exec(`start ${url}`);
-  //     break;
-  //   case 'linux': // Linux
-  //     exec(`xdg-open ${url}`);
-  //     break;
-  //   default:
-  //     console.log('Platform not recognized. Unable to open browser automatically.');
-  //     break;
-  // }
 };
 
 const setupSSE = (server: http.Server): void => {
