@@ -3,7 +3,6 @@ import http from 'http';
 import zlib from 'zlib';
 // import { exec } from 'child_process';
 import serveStatic from 'serve-static';
-import finalhandler from 'finalhandler';
 import murmurhash from 'murmurhash';
 import path from 'path';
 import {
@@ -248,7 +247,15 @@ const setupSSE = (server: http.Server): void => {
           res.setHeader('Content-Type', 'text/html');
           fs.createReadStream(indexPath).pipe(res);
         } else {
-          app(req, res, finalhandler(req, res));
+          app(req, res, (err?: Error & { statusCode?: number }) => {
+            if (err) {
+              res.statusCode = err.statusCode || 500;
+              res.end(err.message || 'Internal Server Error');
+            } else {
+              res.statusCode = 404;
+              res.end('Not Found');
+            }
+          });
         }
       }
     }
