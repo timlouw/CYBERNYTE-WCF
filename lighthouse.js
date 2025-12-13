@@ -41,13 +41,13 @@ async function waitForServer(url, timeout = 30000, interval = 500) {
  * @returns {ChildProcess} The spawned server process.
  */
 function startServer() {
-  console.log('🚀 Starting server with npm run start-prod...');
+  console.log('🚀 Starting server with bun run start-prod...');
   const isWindows = process.platform === 'win32';
   
   const spawnOptions = {
     cwd: process.cwd(),
     stdio: ['ignore', 'pipe', 'pipe'],
-    shell: isWindows, // Use shell on Windows to properly handle npm
+    shell: isWindows, // Use shell on Windows to properly handle bun
   };
   
   // On non-Windows, use detached to allow killing the process group
@@ -55,7 +55,7 @@ function startServer() {
     spawnOptions.detached = true;
   }
 
-  const server = spawn('npm', ['run', 'start-prod'], spawnOptions);
+  const server = spawn('bun', ['run', 'start-prod'], spawnOptions);
 
   server.stdout.on('data', (data) => {
     const msg = data.toString().trim();

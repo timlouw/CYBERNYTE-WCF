@@ -11,7 +11,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@types/node": "^25.0.1",
+    "@types/bun": "^1.2.15",
     "esbuild": "^0.27.1",
     "husky": "^9.1.7",
     "typescript": "^5.9.3"

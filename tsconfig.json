@@ -1,10 +1,12 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "lib": ["ESNext", "DOM"],
+    "types": ["bun-types"],
     "outDir": "./dist",
+    "skipLibCheck": true,
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
