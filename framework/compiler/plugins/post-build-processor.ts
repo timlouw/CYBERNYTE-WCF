@@ -9,9 +9,7 @@ let totalBundleSizeInBytes = 0;
 const fileSizeLog: { fileName: string; sizeInBytes: number }[] = [];
 
 const serverPort = 4200;
-const hotReloadListener = "<script>new EventSource('/hot-reload').onmessage = (event) => location.reload();</script>";
 let serverStarted = false;
-let clients: { id: number; res: http.ServerResponse }[] = [];
 
 export const PostBuildPlugin: { name: string; setup: (build: any) => void } = {
   name: 'post-build-plugin',
@@ -90,15 +88,11 @@ const printAllFileSizes = (): void => {
 const copyIndexHTMLIntoDistAndStartServer = (hashedIndexJSFileName: string, hashedRouterJSFileName: string): void => {
   const indexJSFilePlaceholderText = 'INDEX_JS_FILE_PLACEHOLDER';
   const routerJSFilePlaceholderText = 'ROUTER_JS_FILE_PLACEHOLDER';
-  const hotReloadPlaceHolderText = 'HOT_RELOAD_PLACEHOLDER';
 
   fs.readFile(inputHTMLFilePath, 'utf8', (readErr, data) => {
     if (readErr) throw readErr;
 
-    let updatedData = data
-      .replace(indexJSFilePlaceholderText, hashedIndexJSFileName)
-      .replace(routerJSFilePlaceholderText, hashedRouterJSFileName)
-      .replace(hotReloadPlaceHolderText, serve ? hotReloadListener : '');
+    let updatedData = data.replace(indexJSFilePlaceholderText, hashedIndexJSFileName).replace(routerJSFilePlaceholderText, hashedRouterJSFileName);
 
     fs.writeFile(outputHTMLFilePath, updatedData, 'utf8', (writeErr) => {
       if (writeErr) throw writeErr;
@@ -116,8 +110,8 @@ const copyIndexHTMLIntoDistAndStartServer = (hashedIndexJSFileName: string, hash
 
       fileSizeLog.length = 0;
 
-      if (serve) {
-        serverStarted ? sendReloadMessage() : startServer();
+      if (serve && !serverStarted) {
+        startServer();
       }
     });
   });
@@ -125,43 +119,35 @@ const copyIndexHTMLIntoDistAndStartServer = (hashedIndexJSFileName: string, hash
 
 // SERVER FUNCTIONS ------------------------------------------------------------------------------------------------------------------------------
 const startServer = (): void => {
-  const server = http.createServer();
+  const server = http.createServer((req, res) => {
+    const requestedUrl = req.url || '/';
+    const requestedPath = path.join(distDir, requestedUrl);
+    const indexPath = path.join(distDir, 'index.html');
+    const hasFileExtension = path.extname(requestedUrl).length > 0;
+
+    // Serve static file if it exists and is a file
+    if (fs.existsSync(requestedPath) && fs.statSync(requestedPath).isFile()) {
+      res.setHeader('Content-Type', getContentType(requestedUrl));
+      fs.createReadStream(requestedPath).pipe(res);
+    }
+    // SPA fallback: serve index.html for routes without file extensions (client-side routing)
+    else if (!hasFileExtension) {
+      res.setHeader('Content-Type', 'text/html');
+      fs.createReadStream(indexPath).pipe(res);
+    }
+    // 404 for missing files with extensions
+    else {
+      res.statusCode = 404;
+      res.end('Not Found');
+    }
+  });
+
   const url = `http://localhost:${serverPort}/`;
-  setupSSE(server);
   server.listen(serverPort, () => {
     console.info(consoleColors.yellow, `Server running at ${url}`);
     console.info('');
     console.info('');
     serverStarted = true;
-  });
-};
-
-const setupSSE = (server: http.Server): void => {
-  server.on('request', (req, res) => {
-    if (req.url === '/hot-reload') {
-      handleSSEConnection(req, res);
-    } else {
-      const requestedUrl = req.url || '/';
-      const requestedPath = path.join(distDir, requestedUrl);
-      const indexPath = path.join(distDir, 'index.html');
-      const hasFileExtension = path.extname(requestedUrl).length > 0;
-
-      // Serve static file if it exists and is a file
-      if (fs.existsSync(requestedPath) && fs.statSync(requestedPath).isFile()) {
-        res.setHeader('Content-Type', getContentType(requestedUrl));
-        fs.createReadStream(requestedPath).pipe(res);
-      }
-      // SPA fallback: serve index.html for routes without file extensions (client-side routing)
-      else if (!hasFileExtension) {
-        res.setHeader('Content-Type', 'text/html');
-        fs.createReadStream(indexPath).pipe(res);
-      }
-      // 404 for missing files with extensions
-      else {
-        res.statusCode = 404;
-        res.end('Not Found');
-      }
-    }
   });
 };
 
@@ -176,24 +162,6 @@ const getContentType = (url: string): string => {
     default:
       return 'text/plain';
   }
-};
-
-const handleSSEConnection = (req: http.IncomingMessage, res: http.ServerResponse): void => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-
-  const clientId = Date.now();
-  clients.push({ id: clientId, res });
-
-  req.on('close', () => {
-    clients = clients.filter((client) => client.id !== clientId);
-  });
-};
-
-const sendReloadMessage = (): void => {
-  clients.forEach((client) => client.res.write(`data: ${new Date().toLocaleTimeString()}\n\n`));
 };
 
 const recursivelyCopyAssetsIntoDist = (src: string, dest: string): void => {

@@ -1,5 +1,8 @@
 import { build, BuildOptions, context } from 'esbuild';
-import { inspect } from 'util';
+
+// Config & Utils
+import { distDir, entryPoints, environment, isProd, serve } from './config.js';
+import { consoleColors } from './utils/index.js';
 
 // Plugins (ordered by execution flow)
 import { TypeCheckPlugin } from './plugins/tsc-type-checker.js';
@@ -9,26 +12,9 @@ import { ReactiveBindingPlugin } from './plugins/reactive-binding-compiler.js';
 import { RegisterComponentStripperPlugin } from './plugins/register-component-stripper.js';
 import { PostBuildPlugin } from './plugins/post-build-processor.js';
 
-// Config & Utils
-import { distDir, entryPoints, environment, isProd, serve } from './config.js';
-import { consoleColors } from './utils/index.js';
-
-// Helper to fully expand error objects
-function logFullError(err: unknown) {
-  console.error('Build failed with error:');
-  console.error(inspect(err, { depth: null, colors: true, showHidden: true }));
-  if (err && typeof err === 'object') {
-    console.error('All own properties:', Object.getOwnPropertyNames(err));
-    for (const key of Object.getOwnPropertyNames(err)) {
-      console.error(`  ${key}:`, inspect((err as any)[key], { depth: null, colors: true }));
-    }
-  }
-}
-
 // ============================================================================
 // ESBuild Configuration
 // ============================================================================
-
 const BaseConfig: BuildOptions = {
   entryPoints: entryPoints,
   bundle: true,
@@ -86,7 +72,7 @@ const ProdConfig: BuildOptions = {
       await ctx.watch({}).then(() => console.info(consoleColors.blue, 'Watching for changes...'));
     }
   } catch (err) {
-    logFullError(err);
+    // logFullError(err);
     process.exit(1);
   }
 })();
