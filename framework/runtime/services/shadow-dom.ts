@@ -1,4 +1,4 @@
-import { Signal } from '@models';
+import { Signal } from '../models/signal.js';
 import { createComponentHTMLSelector } from './component-html.js';
 
 type LowercaseString = `${Lowercase<string>}`;

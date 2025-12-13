@@ -15,8 +15,7 @@
     "alwaysStrict": true,
     "noUnusedLocals": true,
     "paths": {
-      "@services": ["./framework/runtime/services/index.ts"],
-      "@models": ["./framework/runtime/models/index.ts"],
-    },
+      "@services": ["./framework/runtime/services/index.ts"]
+    }
   }
 }
