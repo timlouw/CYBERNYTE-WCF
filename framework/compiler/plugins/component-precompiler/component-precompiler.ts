@@ -27,7 +27,127 @@ import {
   createLoaderResult,
 } from '../../utils/index.js';
 
+/**
+ * Information about a component import that needs to be converted to a side-effect import.
+ * After CTFE replaces component function calls with HTML, the named imports become unused
+ * and would be tree-shaken. Converting to side-effect imports preserves the registerComponent
+ * call which defines the custom element.
+ */
+interface ComponentImportInfo {
+  importPath: string;
+  componentNames: Set<string>;
+  importStart: number;
+  importEnd: number;
+}
+
 const NAME = PLUGIN_NAME.COMPONENT;
+
+/**
+ * Finds all imports of known components and tracks which named imports are components.
+ * This is used to convert component imports to side-effect imports after CTFE.
+ *
+ * @example
+ * // Given: import { MyButton, MyInput } from './components.js'
+ * // Where MyButton is a known component but MyInput is not
+ * // Returns info to help transform to: import './components.js'; import { MyInput } from './components.js';
+ */
+const findComponentImports = (sourceFile: ts.SourceFile, knownComponents: Map<string, ComponentDefinition>): ComponentImportInfo[] => {
+  const imports: ComponentImportInfo[] = [];
+
+  const visit = (node: ts.Node) => {
+    if (ts.isImportDeclaration(node) && node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)) {
+      const moduleSpecifier = node.moduleSpecifier;
+      if (!ts.isStringLiteral(moduleSpecifier)) return;
+
+      const importPath = moduleSpecifier.text;
+      const componentNames = new Set<string>();
+
+      for (const element of node.importClause.namedBindings.elements) {
+        const importedName = element.name.text;
+        if (knownComponents.has(importedName)) {
+          componentNames.add(importedName);
+        }
+      }
+
+      if (componentNames.size > 0) {
+        imports.push({
+          importPath,
+          componentNames,
+          importStart: node.getStart(sourceFile),
+          importEnd: node.getEnd(),
+        });
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return imports;
+};
+
+/**
+ * Transforms component imports to side-effect imports after CTFE.
+ * This prevents tree-shaking from removing the registerComponent calls.
+ *
+ * @example
+ * // Before CTFE: import { MyButton } from './button.js'; ... MyButton({ text: 'Hi' })
+ * // After CTFE:  import { MyButton } from './button.js'; ... <my-button text="Hi"></my-button>
+ * // After this:  import './button.js'; ... <my-button text="Hi"></my-button>
+ *
+ * If there are mixed imports (components + non-components), only the component names are removed:
+ * // Before: import { MyButton, helperFn } from './mixed.js';
+ * // After:  import './mixed.js'; import { helperFn } from './mixed.js';
+ */
+const transformComponentImportsToSideEffects = (source: string, sourceFile: ts.SourceFile, componentImports: ComponentImportInfo[], ctfedComponents: Set<string>): string => {
+  // Sort imports by position descending to process from bottom to top
+  const sortedImports = [...componentImports].sort((a, b) => b.importStart - a.importStart);
+
+  let modifiedSource = source;
+
+  for (const importInfo of sortedImports) {
+    // Check if any of the components in this import were actually CTFE'd
+    const ctfedInThisImport = new Set([...importInfo.componentNames].filter((name) => ctfedComponents.has(name)));
+
+    if (ctfedInThisImport.size === 0) continue;
+
+    // Get the original import statement text
+    const originalImport = source.substring(importInfo.importStart, importInfo.importEnd);
+
+    // Parse the import to get all named imports
+    const importMatch = originalImport.match(/import\s*\{([^}]+)\}\s*from\s*(['"])([^'"]+)\2/);
+    if (!importMatch) continue;
+
+    const allImports = importMatch[1]
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const importQuote = importMatch[2];
+    const importPath = importMatch[3];
+
+    // Filter out the CTFE'd components
+    const remainingImports = allImports.filter((imp) => {
+      // Handle "Name as Alias" syntax
+      const name = imp.split(/\s+as\s+/)[0].trim();
+      return !ctfedInThisImport.has(name);
+    });
+
+    // Build the new import statement(s)
+    let newImport = '';
+
+    // Always add a side-effect import for the module (to keep registerComponent running)
+    newImport = `import ${importQuote}${importPath}${importQuote};`;
+
+    // If there are remaining non-component imports, add a named import for them
+    if (remainingImports.length > 0) {
+      newImport += `\nimport { ${remainingImports.join(', ')} } from ${importQuote}${importPath}${importQuote};`;
+    }
+
+    modifiedSource = modifiedSource.substring(0, importInfo.importStart) + newImport + modifiedSource.substring(importInfo.importEnd);
+  }
+
+  return modifiedSource;
+};
 
 /**
  * Creates a compile-time evaluation context for static expressions.
@@ -390,6 +510,9 @@ export const ComponentPrecompilerPlugin: Plugin = {
           return undefined;
         }
 
+        // Track which components were CTFE'd so we can fix their imports
+        const ctfedComponents = new Set<string>();
+
         // Apply CTFE: actually execute generateHTML at compile time!
         let modifiedSource = source;
         const sortedCalls = [...componentCalls].sort((a, b) => b.startIndex - a.startIndex);
@@ -404,7 +527,18 @@ export const ComponentPrecompilerPlugin: Plugin = {
             });
 
             modifiedSource = modifiedSource.substring(0, call.startIndex) + compiledHTML + modifiedSource.substring(call.endIndex);
+            ctfedComponents.add(call.componentName);
           }
+        }
+
+        // CRITICAL: Transform component imports to side-effect imports
+        // After CTFE, component function calls are replaced with HTML strings,
+        // making the named imports "unused" which causes tree-shaking to remove them.
+        // This breaks the app because registerComponent() never runs.
+        // Converting to side-effect imports preserves the custom element registration.
+        const componentImports = findComponentImports(sourceFile, componentDefinitions);
+        if (componentImports.length > 0) {
+          modifiedSource = transformComponentImportsToSideEffects(modifiedSource, sourceFile, componentImports, ctfedComponents);
         }
 
         // Strip template tags - now handled via simple string replace since AST already processed content

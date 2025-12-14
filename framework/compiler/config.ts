@@ -20,4 +20,4 @@ export const assetsInputDir = `./apps/${application}/assets`;
 export const assetsOutputDir = `./dist/${application}/assets`;
 export const inputHTMLFilePath = `./apps/${indexHTMLFileName}`;
 export const outputHTMLFilePath = `${distDir}/${indexHTMLFileName}`;
-export const entryPoints: string[] = [`./apps/${application}/index.ts`, `./apps/${application}/router/router.ts`];
+export const entryPoints: string[] = [`./apps/${application}/router/router.ts`];
