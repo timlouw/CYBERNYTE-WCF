@@ -62,3 +62,35 @@ export const directoryExists = (dir: string): boolean => {
     return false;
   }
 };
+
+/**
+ * Convert kebab-case to camelCase
+ * @example toCamelCase('background-color') => 'backgroundColor'
+ */
+export const toCamelCase = (str: string): string => str.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+
+/**
+ * Get MIME content type for a file based on extension
+ */
+export const getContentType = (url: string): string => {
+  const ext = url.substring(url.lastIndexOf('.'));
+  switch (ext) {
+    case '.js':
+      return 'text/javascript';
+    case '.css':
+      return 'text/css';
+    case '.html':
+      return 'text/html';
+    case '.json':
+      return 'application/json';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.svg':
+      return 'image/svg+xml';
+    default:
+      return 'text/plain';
+  }
+};

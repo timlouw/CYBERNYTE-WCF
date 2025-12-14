@@ -5,12 +5,7 @@ import { distDir, entryPoints, environment, isProd, serve } from './config.js';
 import { consoleColors } from './utils/index.js';
 
 // Plugins (ordered by execution flow)
-import { TypeCheckPlugin } from './plugins/tsc-type-checker.js';
-import { RoutesPrecompilerPlugin } from './plugins/routes-precompiler.js';
-import { ComponentPrecompilerPlugin } from './plugins/component-precompiler.js';
-import { ReactiveBindingPlugin } from './plugins/reactive-binding-compiler.js';
-import { RegisterComponentStripperPlugin } from './plugins/register-component-stripper.js';
-import { PostBuildPlugin } from './plugins/post-build-processor.js';
+import { TypeCheckPlugin, RoutesPrecompilerPlugin, ComponentPrecompilerPlugin, ReactiveBindingPlugin, RegisterComponentStripperPlugin, PostBuildPlugin } from './plugins/index.js';
 
 // ============================================================================
 // ESBuild Configuration

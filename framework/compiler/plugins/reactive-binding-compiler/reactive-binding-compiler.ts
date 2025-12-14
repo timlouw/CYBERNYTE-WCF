@@ -1,7 +1,18 @@
+/**
+ * Reactive Binding Compiler Plugin
+ *
+ * Transforms signal expressions in templates into efficient DOM bindings.
+ * Generates static templates and binding initialization code.
+ *
+ * @example
+ * // Before: html`<span>${this.count()}</span>`
+ * // After:  static template with `<span id="r0">0</span>`
+ * //         + initializeBindings() { __bindText(this.shadowRoot, this.count, 'r0'); }
+ */
 import fs from 'fs';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
-import type { ReactiveBinding, SignalExpression, TemplateEdit, ImportInfo } from '../types.js';
+import type { ReactiveBinding, SignalExpression, TemplateEdit, ImportInfo, TemplateInfo } from '../../types.js';
 import {
   findComponentClass,
   findSignalInitializers,
@@ -14,8 +25,11 @@ import {
   logger,
   hasHtmlTemplates,
   extendsComponent,
+  toCamelCase,
+  createLoaderResult,
   PLUGIN_NAME,
-} from '../utils/index.js';
+  BIND_FN,
+} from '../../utils/index.js';
 
 const NAME = PLUGIN_NAME.REACTIVE;
 
@@ -64,16 +78,6 @@ const findServicesImport = (sourceFile: ts.SourceFile): ImportInfo | null => {
   }
   return null;
 };
-
-/**
- * Template info extracted from html tagged template literals
- */
-interface TemplateInfo {
-  node: ts.TaggedTemplateExpression;
-  expressions: SignalExpression[];
-  templateStart: number;
-  templateEnd: number;
-}
 
 /**
  * Find all html tagged template literals and extract signal expressions.
@@ -131,14 +135,6 @@ const findHtmlTemplates = (sourceFile: ts.SourceFile): TemplateInfo[] => {
 // ============================================================================
 // HTML Template Processing
 // ============================================================================
-
-/**
- * Converts CSS property name to camelCase for direct style property access
- * e.g., "background-color" -> "backgroundColor"
- */
-const toCamelCase = (str: string): string => {
-  return str.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
-};
 
 /**
  * Determines the binding type based on the context before the expression in HTML
@@ -290,11 +286,11 @@ const generateBindingsCode = (bindings: ReactiveBinding[]): string => {
     .map((binding) => {
       if (binding.propertyType === 'style') {
         const prop = toCamelCase(binding.property!);
-        return `    __bindStyle(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}','${prop}');`;
+        return `    ${BIND_FN.STYLE}(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}','${prop}');`;
       } else if (binding.propertyType === 'attribute') {
-        return `    __bindAttr(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}','${binding.property}');`;
+        return `    ${BIND_FN.ATTR}(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}','${binding.property}');`;
       } else {
-        return `    __bindText(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}');`;
+        return `    ${BIND_FN.TEXT}(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}');`;
       }
     })
     .join('\n');
@@ -428,24 +424,21 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     staticTemplateCode = generateStaticTemplate(lastProcessedTemplateContent);
   }
 
-  // Find class body start position for injection
+  // Find class body start position for injection (handles both empty and non-empty classes)
   let classBodyStart: number | null = null;
-  if (componentClass.members && componentClass.members.length > 0) {
-    // Find opening brace position
-    const classStart = componentClass.getStart(sourceFile);
-    const classText = componentClass.getText(sourceFile);
-    const braceIndex = classText.indexOf('{');
-    if (braceIndex !== -1) {
-      classBodyStart = classStart + braceIndex + 1;
-    }
+  const classStart = componentClass.getStart(sourceFile);
+  const classText = componentClass.getText(sourceFile);
+  const braceIndex = classText.indexOf('{');
+  if (braceIndex !== -1) {
+    classBodyStart = classStart + braceIndex + 1;
   }
 
   // Update import if we have bindings
   if (allBindings.length > 0 && servicesImport) {
     const requiredFunctions: string[] = [];
-    if (allBindings.some((b) => b.propertyType === 'style')) requiredFunctions.push('__bindStyle');
-    if (allBindings.some((b) => b.propertyType === 'attribute')) requiredFunctions.push('__bindAttr');
-    if (allBindings.some((b) => b.propertyType === 'innerText')) requiredFunctions.push('__bindText');
+    if (allBindings.some((b) => b.propertyType === 'style')) requiredFunctions.push(BIND_FN.STYLE);
+    if (allBindings.some((b) => b.propertyType === 'attribute')) requiredFunctions.push(BIND_FN.ATTR);
+    if (allBindings.some((b) => b.propertyType === 'innerText')) requiredFunctions.push(BIND_FN.TEXT);
 
     if (requiredFunctions.length > 0) {
       const newImport = generateUpdatedImport(servicesImport, requiredFunctions);
@@ -520,10 +513,7 @@ export const ReactiveBindingPlugin: Plugin = {
           return undefined;
         }
 
-        return {
-          contents: transformed,
-          loader: 'ts',
-        };
+        return createLoaderResult(transformed);
       } catch (error) {
         logger.error(NAME, `Error processing ${args.path}`, error);
         return undefined;

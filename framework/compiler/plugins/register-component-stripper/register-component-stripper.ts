@@ -1,8 +1,8 @@
 import fs from 'fs';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
-import { sourceCache, removeCode, logger, PLUGIN_NAME, COMPONENT_TYPE } from '../utils/index.js';
-import type { CodeRemoval } from '../utils/source-editor.js';
+import { sourceCache, removeCode, logger, PLUGIN_NAME, COMPONENT_TYPE, createLoaderResult } from '../../utils/index.js';
+import type { CodeRemoval } from '../../utils/source-editor.js';
 
 const NAME = PLUGIN_NAME.STRIPPER;
 
@@ -138,10 +138,7 @@ export const RegisterComponentStripperPlugin: Plugin = {
 
         logger.info(NAME, `Removing ${removals.length} code block(s) from shadow-dom.ts`);
 
-        return {
-          contents: removeCode(source, removals),
-          loader: 'ts',
-        };
+        return createLoaderResult(removeCode(source, removals));
       } catch (error) {
         logger.error(NAME, `Error processing ${args.path}`, error);
         return undefined;
@@ -179,10 +176,7 @@ export const RegisterComponentStripperPlugin: Plugin = {
 
         logger.info(NAME, `Removing ${removals.length} export(s) from services/index.ts`);
 
-        return {
-          contents: removeCode(source, removals),
-          loader: 'ts',
-        };
+        return createLoaderResult(removeCode(source, removals));
       } catch (error) {
         logger.error(NAME, `Error processing ${args.path}`, error);
         return undefined;

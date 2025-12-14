@@ -30,6 +30,25 @@ export interface PageSelectorInfo {
 }
 
 /**
+ * Route object info for injection during route compilation
+ */
+export interface RouteObject {
+  importPath: string;
+  lastPropEnd: number;
+  needsComma: boolean;
+}
+
+/**
+ * Template info extracted from html tagged template literals
+ */
+export interface TemplateInfo {
+  node: import('typescript').TaggedTemplateExpression;
+  expressions: SignalExpression[];
+  templateStart: number;
+  templateEnd: number;
+}
+
+/**
  * Reactive binding configuration
  */
 export interface ReactiveBinding {

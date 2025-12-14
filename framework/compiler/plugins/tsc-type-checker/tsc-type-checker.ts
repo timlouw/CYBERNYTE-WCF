@@ -1,6 +1,13 @@
+/**
+ * TypeScript Type Checker Plugin
+ *
+ * Runs `tsc --noEmit` asynchronously to validate TypeScript types without blocking
+ * the build. Catches type errors early while allowing esbuild to proceed with
+ * bundling in parallel.
+ */
 import { exec } from 'child_process';
 import { Plugin } from 'esbuild';
-import { logger, PLUGIN_NAME } from '../utils/index.js';
+import { logger, PLUGIN_NAME } from '../../utils/index.js';
 
 const NAME = PLUGIN_NAME.TYPE_CHECK;
 let isRunning = false;

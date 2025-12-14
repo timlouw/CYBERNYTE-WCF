@@ -1,11 +1,31 @@
+/**
+ * Component Precompiler Plugin - TRUE CTFE Implementation
+ *
+ * Evaluates component function calls at compile time and replaces them with
+ * pre-generated HTML. Uses Node.js vm module to actually execute expressions.
+ *
+ * @example
+ * // Before: html`<div>${Button({ text: 'Click' })}</div>`
+ * // After:  `<div><ui-button text="Click"></ui-button></div>`
+ */
 import fs from 'fs';
 import path from 'path';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
 import vm from 'vm';
-import { generateComponentHTML } from '../../runtime/dom/component-html.js';
-import type { ComponentDefinition } from '../types.js';
-import { extractComponentDefinitions, findEnclosingClass, isSignalCall, collectFilesRecursively, sourceCache, logger, PLUGIN_NAME, FN } from '../utils/index.js';
+import { generateComponentHTML } from '../../../runtime/dom/component-html.js';
+import type { ComponentDefinition } from '../../types.js';
+import {
+  extractComponentDefinitions,
+  findEnclosingClass,
+  isSignalCall,
+  collectFilesRecursively,
+  sourceCache,
+  logger,
+  PLUGIN_NAME,
+  FN,
+  createLoaderResult,
+} from '../../utils/index.js';
 
 const NAME = PLUGIN_NAME.COMPONENT;
 
@@ -392,10 +412,7 @@ export const ComponentPrecompilerPlugin: Plugin = {
         modifiedSource = modifiedSource.replace(/css`/g, '`');
         modifiedSource = modifiedSource.replace(/html`/g, '`');
 
-        return {
-          contents: modifiedSource,
-          loader: 'ts',
-        };
+        return createLoaderResult(modifiedSource);
       } catch (error) {
         logger.error(NAME, `Error processing ${args.path}`, error);
         return undefined;

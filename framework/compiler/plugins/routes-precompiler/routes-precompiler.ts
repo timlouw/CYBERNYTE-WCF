@@ -1,20 +1,20 @@
+/**
+ * Routes Precompiler Plugin - CTFE for Route Selectors
+ *
+ * Injects pre-computed page selectors into route definitions at compile time.
+ * This allows the router to render pages via innerHTML without dynamic imports.
+ *
+ * @example
+ * // Before: { path: '/', componentModule: () => import('./landing.js') }
+ * // After:  { path: '/', componentModule: () => import('./landing.js'), selector: '<ui-landing></ui-landing>' }
+ */
 import path from 'path';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
-import { extractPageSelector, safeReadFile, sourceCache, logger, PLUGIN_NAME, PROP } from '../utils/index.js';
+import type { PageSelectorInfo, RouteObject } from '../../types.js';
+import { extractPageSelector, safeReadFile, sourceCache, logger, PLUGIN_NAME, PROP, generateSelectorHTML, createLoaderResult } from '../../utils/index.js';
 
 const NAME = PLUGIN_NAME.ROUTES;
-
-interface PageSelectorInfo {
-  importPath: string;
-  selector: string;
-}
-
-interface RouteObject {
-  importPath: string;
-  lastPropEnd: number;
-  needsComma: boolean;
-}
 
 /**
  * Resolves the page file path from the import statement in routes.
@@ -201,17 +201,14 @@ export const RoutesPrecompilerPlugin: Plugin = {
         for (const routeObj of routeObjects) {
           const selectorInfo = pageSelectors.get(routeObj.importPath);
           if (selectorInfo) {
-            const selectorHtml = `<${selectorInfo.selector}></${selectorInfo.selector}>`;
+            const selectorHtml = generateSelectorHTML(selectorInfo.selector);
             const injection = `${routeObj.needsComma ? ',' : ''}\n    selector: '${selectorHtml}'`;
 
             modifiedSource = modifiedSource.substring(0, routeObj.lastPropEnd) + injection + modifiedSource.substring(routeObj.lastPropEnd);
           }
         }
 
-        return {
-          contents: modifiedSource,
-          loader: 'ts',
-        };
+        return createLoaderResult(modifiedSource);
       } catch (error) {
         logger.error(NAME, `Error processing ${args.path}`, error);
         return undefined;

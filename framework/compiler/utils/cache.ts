@@ -8,7 +8,6 @@ import { safeReadFile } from './file-utils.js';
 interface CachedFile {
   source: string;
   sourceFile: ts.SourceFile;
-  timestamp: number;
 }
 
 /**
@@ -46,7 +45,6 @@ class SourceFileCache {
     this.cache.set(filePath, {
       source,
       sourceFile,
-      timestamp: Date.now(),
     });
 
     return { source, sourceFile };

@@ -10,17 +10,10 @@ export const serve: boolean = !!process.argv[4];
 export const isProd: boolean = environment === 'prod';
 
 // ============================================================================
-// File Names
-// ============================================================================
-
-export const indexHTMLFileName = 'index.html';
-export const indexJSFileName = 'index.js';
-export const indexCSSFileName = 'index.css';
-export const routerJSFileName = 'router.js';
-
-// ============================================================================
 // Paths
 // ============================================================================
+
+const indexHTMLFileName = 'index.html';
 
 export const distDir = `./dist/${application}`;
 export const assetsInputDir = `./apps/${application}/assets`;

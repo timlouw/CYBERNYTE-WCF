@@ -108,3 +108,11 @@ export const hasHtmlTemplates = (source: string): boolean => {
 export const extendsComponent = (source: string): boolean => {
   return source.includes('extends Component');
 };
+
+/**
+ * Create a standard esbuild loader result for TypeScript files
+ */
+export const createLoaderResult = (contents: string): { contents: string; loader: 'ts' } => ({
+  contents,
+  loader: 'ts',
+});

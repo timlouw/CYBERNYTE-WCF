@@ -14,43 +14,14 @@ interface LogMessage {
 
 /**
  * Unified logger for compiler plugins.
- * Provides consistent formatting and batching capabilities.
+ * Provides consistent formatting across all plugins.
  */
 class CompilerLogger {
-  private batch: LogMessage[] = [];
-  private batchMode = false;
-
-  /**
-   * Start batching log messages (useful for multiple operations)
-   */
-  startBatch(): void {
-    this.batchMode = true;
-    this.batch = [];
-  }
-
-  /**
-   * Flush all batched messages at once
-   */
-  flushBatch(): void {
-    if (this.batch.length > 0) {
-      for (const msg of this.batch) {
-        this.print('info', msg);
-      }
-      this.batch = [];
-    }
-    this.batchMode = false;
-  }
-
   /**
    * Log an info message
    */
   info(plugin: string, message: string, details?: string): void {
-    const msg = { plugin, message, details };
-    if (this.batchMode) {
-      this.batch.push(msg);
-    } else {
-      this.print('info', msg);
-    }
+    this.print('info', { plugin, message, details });
   }
 
   /**

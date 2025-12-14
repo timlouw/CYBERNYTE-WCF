@@ -7,7 +7,7 @@ export { consoleColors } from './colors.js';
 export { logger } from './logger.js';
 
 // File system utilities
-export { safeReadFile, collectFilesRecursively, directoryExists } from './file-utils.js';
+export { safeReadFile, collectFilesRecursively, directoryExists, toCamelCase, getContentType } from './file-utils.js';
 
 // Source code editing
 export { applyEdits, removeCode, insertAt } from './source-editor.js';
@@ -37,8 +37,8 @@ export {
 export { sourceCache } from './cache.js';
 
 // Plugin helpers
-export { processFileWithAST, shouldSkipPath, hasSignalPatterns, hasHtmlTemplates, extendsComponent } from './plugin-helper.js';
+export { processFileWithAST, shouldSkipPath, hasSignalPatterns, hasHtmlTemplates, extendsComponent, createLoaderResult } from './plugin-helper.js';
 export type { ProcessResult, ProcessOptions } from './plugin-helper.js';
 
 // Constants
-export { FN, CLASS, COMPONENT_TYPE, PROP, PLUGIN_NAME } from './constants.js';
+export { FN, CLASS, COMPONENT_TYPE, PROP, PLUGIN_NAME, BIND_FN, generateSelectorHTML } from './constants.js';

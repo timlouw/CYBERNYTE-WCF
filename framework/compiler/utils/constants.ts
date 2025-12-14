@@ -47,3 +47,18 @@ export const PLUGIN_NAME = {
   STRIPPER: 'stripper',
   POST_BUILD: 'post-build',
 } as const;
+
+/**
+ * Reactive binding function names (injected into component classes)
+ */
+export const BIND_FN = {
+  TEXT: '__bindText',
+  STYLE: '__bindStyle',
+  ATTR: '__bindAttr',
+} as const;
+
+/**
+ * Generate HTML selector tag for a component
+ * @example generateSelectorHTML('ui-button') => '<ui-button></ui-button>'
+ */
+export const generateSelectorHTML = (selector: string): string => `<${selector}></${selector}>`;

@@ -2,8 +2,8 @@ import fs from 'fs';
 import http from 'http';
 import path from 'path';
 import { Metafile, Plugin } from 'esbuild';
-import { assetsInputDir, assetsOutputDir, distDir, inputHTMLFilePath, outputHTMLFilePath, serve } from '../config.js';
-import { consoleColors, PLUGIN_NAME, sourceCache } from '../utils/index.js';
+import { assetsInputDir, assetsOutputDir, distDir, inputHTMLFilePath, outputHTMLFilePath, serve } from '../../config.js';
+import { consoleColors, PLUGIN_NAME, sourceCache, getContentType } from '../../utils/index.js';
 
 const NAME = PLUGIN_NAME.POST_BUILD;
 
@@ -162,19 +162,6 @@ const startServer = (): void => {
     console.info('');
     serverStarted = true;
   });
-};
-
-const getContentType = (url: string): string => {
-  switch (path.extname(url)) {
-    case '.js':
-      return 'text/javascript';
-    case '.css':
-      return 'text/css';
-    case '.html':
-      return 'text/html';
-    default:
-      return 'text/plain';
-  }
 };
 
 // B3: Convert to async/await
