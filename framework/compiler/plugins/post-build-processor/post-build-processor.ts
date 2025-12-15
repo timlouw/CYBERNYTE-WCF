@@ -56,8 +56,11 @@ export const PostBuildPlugin: Plugin = {
 // METAFILE PROCESSING ----------------------------------------------------------------------------------------------------------------------------
 const processMetafileAndUpdateHTML = async (metafile: Metafile): Promise<void> => {
   const outputs = metafile.outputs;
-  let hashedIndexJSFileName = '';
-  let hashedRouterJSFileName = '';
+  const hashedFileNames: Record<string, string> = {
+    main: '',
+    router: '',
+    index: '',
+  };
 
   // Find hashed filenames from metafile and collect sizes
   for (const [outputPath, info] of Object.entries(outputs)) {
@@ -68,15 +71,17 @@ const processMetafileAndUpdateHTML = async (metafile: Metafile): Promise<void> =
 
     // Match entry points by their source
     if (info.entryPoint) {
-      if (info.entryPoint.includes('index.ts')) {
-        hashedIndexJSFileName = fileName;
+      if (info.entryPoint.includes('main.ts')) {
+        hashedFileNames.main = fileName;
       } else if (info.entryPoint.includes('router.ts')) {
-        hashedRouterJSFileName = fileName;
+        hashedFileNames.router = fileName;
+      } else if (info.entryPoint.includes('index.ts')) {
+        hashedFileNames.index = fileName;
       }
     }
   }
 
-  await copyIndexHTMLIntoDistAndStartServer(hashedIndexJSFileName, hashedRouterJSFileName);
+  await copyIndexHTMLIntoDistAndStartServer(hashedFileNames);
 };
 
 const getSizeColor = (sizeInBytes: number, maxSize: number): string => {
@@ -100,14 +105,26 @@ const printAllFileSizes = (): void => {
 };
 
 // HTML PROCESSING --------------------------------------------------------------------------------------------------------------------------------
-const copyIndexHTMLIntoDistAndStartServer = async (hashedIndexJSFileName: string, hashedRouterJSFileName: string): Promise<void> => {
-  const indexJSFilePlaceholderText = 'INDEX_JS_FILE_PLACEHOLDER';
-  const routerJSFilePlaceholderText = 'ROUTER_JS_FILE_PLACEHOLDER';
+const copyIndexHTMLIntoDistAndStartServer = async (hashedFileNames: Record<string, string>): Promise<void> => {
+  const placeholders: Record<string, string> = {
+    MAIN_JS_FILE_PLACEHOLDER: hashedFileNames.main,
+    ROUTER_JS_FILE_PLACEHOLDER: hashedFileNames.router,
+    INDEX_JS_FILE_PLACEHOLDER: hashedFileNames.index,
+  };
 
   // B3: Convert to async/await
-  const data = await fs.promises.readFile(inputHTMLFilePath, 'utf8');
+  let data = await fs.promises.readFile(inputHTMLFilePath, 'utf8');
 
-  const updatedData = data.replace(indexJSFilePlaceholderText, hashedIndexJSFileName).replace(routerJSFilePlaceholderText, hashedRouterJSFileName);
+  // Replace all placeholders with hashed filenames
+  for (const [placeholder, fileName] of Object.entries(placeholders)) {
+    if (fileName) {
+      data = data.replace(placeholder, fileName);
+    }
+  }
+
+  // Inject bootstrap HTML if available
+  const { injectBootstrapHTML } = await import('../html-bootstrap-injector/html-bootstrap-injector.js');
+  const updatedData = injectBootstrapHTML(data);
 
   await fs.promises.writeFile(outputHTMLFilePath, updatedData, 'utf8');
 

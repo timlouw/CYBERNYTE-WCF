@@ -5,7 +5,15 @@ import { distDir, entryPoints, environment, isProd, serve } from './config.js';
 import { consoleColors } from './utils/index.js';
 
 // Plugins (ordered by execution flow)
-import { TypeCheckPlugin, RoutesPrecompilerPlugin, ComponentPrecompilerPlugin, ReactiveBindingPlugin, RegisterComponentStripperPlugin, PostBuildPlugin } from './plugins/index.js';
+import {
+  TypeCheckPlugin,
+  RoutesPrecompilerPlugin,
+  ComponentPrecompilerPlugin,
+  ReactiveBindingPlugin,
+  RegisterComponentStripperPlugin,
+  HTMLBootstrapInjectorPlugin,
+  PostBuildPlugin,
+} from './plugins/index.js';
 
 // ============================================================================
 // ESBuild Configuration
@@ -30,7 +38,8 @@ const BaseConfig: BuildOptions = {
     ComponentPrecompilerPlugin, // 3. CTFE for component HTML generation
     ReactiveBindingPlugin, // 4. Compile reactive signal bindings
     RegisterComponentStripperPlugin, // 5. Remove compile-time-only code
-    PostBuildPlugin, // 6. Copy assets, update HTML, start server
+    HTMLBootstrapInjectorPlugin, // 6. Inject root component HTML into index.html
+    PostBuildPlugin, // 7. Copy assets, update HTML, start server
   ],
 };
 

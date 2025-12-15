@@ -20,4 +20,9 @@ export const assetsInputDir = `./apps/${application}/assets`;
 export const assetsOutputDir = `./dist/${application}/assets`;
 export const inputHTMLFilePath = `./apps/${indexHTMLFileName}`;
 export const outputHTMLFilePath = `${distDir}/${indexHTMLFileName}`;
-export const entryPoints: string[] = [`./apps/${application}/router/router.ts`];
+
+// Entry points configuration:
+// - main.ts: Bootstrap entry point (renders root component, HTML injected at build time)
+// - router.ts: Optional router entry point (add for SPA navigation)
+// Use just main.ts for simple apps, or both for apps with routing
+export const entryPoints: string[] = [`./apps/${application}/main.ts`];

@@ -1,7 +1,7 @@
 import { Component, registerComponent } from '../../../framework/runtime/dom/shadow-dom.js';
 import { MyElementComponent } from '../components/test.js';
 
-export default registerComponent(
+export const AppComponent = registerComponent(
   { selector: 'ui-landing-page', type: 'page' },
   class extends Component {
     render = () => {

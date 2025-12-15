@@ -3,7 +3,7 @@
 
 import { ROUTES, ROUTE_NOT_FOUND, Route, RoutesKeys } from './routes.js';
 
-const routerOutlet = document.getElementById('body') as HTMLElement;
+const routerOutlet = document.body as HTMLElement;
 let currentPath: RoutesKeys;
 let newRoute: Route;
 let routeParams: { [key: string]: any } = {};

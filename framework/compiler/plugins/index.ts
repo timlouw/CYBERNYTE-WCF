@@ -20,5 +20,8 @@ export { ReactiveBindingPlugin } from './reactive-binding-compiler/reactive-bind
 // 5. Register Component Stripper - Removes compile-time-only code
 export { RegisterComponentStripperPlugin } from './register-component-stripper/register-component-stripper.js';
 
-// 6. Post Build Processor - Copies assets, updates HTML, starts dev server
+// 6. HTML Bootstrap Injector - Injects root component HTML into index.html at build time
+export { HTMLBootstrapInjectorPlugin, injectBootstrapHTML } from './html-bootstrap-injector/html-bootstrap-injector.js';
+
+// 7. Post Build Processor - Copies assets, updates HTML, starts dev server
 export { PostBuildPlugin } from './post-build-processor/post-build-processor.js';
