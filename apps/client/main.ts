@@ -14,4 +14,4 @@
  */
 import { mount } from '../../framework/compiler/bootstrap.js';
 import { AppComponent } from './pages/landing.js';
-mount(AppComponent, document.getElementById('root'));
+mount(AppComponent, document.body);

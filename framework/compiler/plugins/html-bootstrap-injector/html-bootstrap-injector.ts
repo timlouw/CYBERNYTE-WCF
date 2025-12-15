@@ -158,7 +158,7 @@ const parseMountTarget = (targetNode: ts.Node, sourceFile: ts.SourceFile): Mount
  * Finds the mount() call in the source file and extracts component name and target.
  */
 const findMountCall = (
-  sourceFile: ts.SourceFile
+  sourceFile: ts.SourceFile,
 ): {
   componentName: string;
   target: MountTarget;
