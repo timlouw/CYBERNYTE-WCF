@@ -2,6 +2,7 @@
 // Console Colors - ANSI escape codes for terminal output
 // ============================================================================
 
+// Format string colors - use with console.log(color, message)
 export const consoleColors = {
   green: '\x1b[32m%s\x1b[0m',
   yellow: '\x1b[33m%s\x1b[0m',
@@ -9,6 +10,17 @@ export const consoleColors = {
   cyan: '\x1b[36m%s\x1b[0m',
   red: '\x1b[31m%s\x1b[0m',
   orange: '\x1b[38;5;208m%s\x1b[0m',
+  reset: '\x1b[0m',
+} as const;
+
+// Raw ANSI codes - use for string interpolation: `${ansi.yellow}text${ansi.reset}`
+export const ansi = {
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[94m',
+  cyan: '\x1b[36m',
+  red: '\x1b[31m',
+  orange: '\x1b[38;5;208m',
   reset: '\x1b[0m',
 } as const;
 

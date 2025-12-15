@@ -1,9 +1,10 @@
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
+import readline from 'readline';
 import { Metafile, Plugin } from 'esbuild';
 import { assetsInputDir, assetsOutputDir, distDir, inputHTMLFilePath, outputHTMLFilePath, serve } from '../../config.js';
-import { consoleColors, PLUGIN_NAME, sourceCache, getContentType } from '../../utils/index.js';
+import { consoleColors, ansi, PLUGIN_NAME, sourceCache, getContentType } from '../../utils/index.js';
 
 const NAME = PLUGIN_NAME.POST_BUILD;
 
@@ -148,7 +149,27 @@ const copyIndexHTMLIntoDistAndStartServer = async (hashedFileNames: Record<strin
 };
 
 // SERVER FUNCTIONS ------------------------------------------------------------------------------------------------------------------------------
-const startServer = (): void => {
+const promptForPort = (): Promise<number> => {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(`${ansi.yellow}Enter a different port number: ${ansi.reset}`, (answer) => {
+      rl.close();
+      const port = parseInt(answer, 10);
+      if (isNaN(port) || port < 1 || port > 65535) {
+        console.error(consoleColors.red, 'Invalid port number. Please enter a number between 1 and 65535.');
+        resolve(promptForPort());
+      } else {
+        resolve(port);
+      }
+    });
+  });
+};
+
+const startServer = (port: number = serverPort): void => {
   const server = http.createServer((req, res) => {
     const requestedUrl = req.url || '/';
     const requestedPath = path.join(distDir, requestedUrl);
@@ -172,8 +193,18 @@ const startServer = (): void => {
     }
   });
 
-  const url = `http://localhost:${serverPort}/`;
-  server.listen(serverPort, () => {
+  server.on('error', async (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(consoleColors.red, `Port ${port} is already in use.`);
+      const newPort = await promptForPort();
+      startServer(newPort);
+    } else {
+      throw err;
+    }
+  });
+
+  const url = `http://localhost:${port}/`;
+  server.listen(port, () => {
     console.info(consoleColors.yellow, `Server running at ${url}`);
     console.info('');
     console.info('');

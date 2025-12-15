@@ -3,7 +3,7 @@
 // ============================================================================
 
 // Colors and logging
-export { consoleColors } from './colors.js';
+export { consoleColors, ansi } from './colors.js';
 export { logger } from './logger.js';
 
 // File system utilities
