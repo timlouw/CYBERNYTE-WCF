@@ -3,7 +3,7 @@ import http from 'http';
 import path from 'path';
 import readline from 'readline';
 import { Metafile, Plugin } from 'esbuild';
-import { assetsInputDir, assetsOutputDir, distDir, inputHTMLFilePath, outputHTMLFilePath, serve } from '../../config.js';
+import { assetsInputDir, assetsOutputDir, distDir, inputHTMLFilePath, outputHTMLFilePath, serve, isProd } from '../../config.js';
 import { consoleColors, ansi, PLUGIN_NAME, sourceCache, getContentType } from '../../utils/index.js';
 
 const NAME = PLUGIN_NAME.POST_BUILD;
@@ -13,6 +13,7 @@ const fileSizeLog: { fileName: string; sizeInBytes: number }[] = [];
 
 const serverPort = 4200;
 let serverStarted = false;
+let sseClients: http.ServerResponse[] = [];
 
 /**
  * Post Build Plugin - Handles post-build tasks
@@ -116,6 +117,11 @@ const printAllFileSizes = (): void => {
   }
 };
 
+const injectLiveReloadScript = (html: string): string => {
+  const script = `<script>new EventSource('/__live-reload').onmessage=()=>location.reload()</script>`;
+  return html.replace('</body>', `${script}</body>`);
+};
+
 // HTML PROCESSING --------------------------------------------------------------------------------------------------------------------------------
 const copyIndexHTMLIntoDistAndStartServer = async (hashedFileNames: Record<string, string>): Promise<void> => {
   const placeholders: Record<string, string> = {
@@ -142,6 +148,11 @@ const copyIndexHTMLIntoDistAndStartServer = async (hashedFileNames: Record<strin
   const { minifySelectorsInHTML } = await import('../minification/minification.js');
   updatedData = minifySelectorsInHTML(updatedData);
 
+  // Inject live reload script (dev serve mode only)
+  if (serve && !isProd) {
+    updatedData = injectLiveReloadScript(updatedData);
+  }
+
   await fs.promises.writeFile(outputHTMLFilePath, updatedData, 'utf8');
 
   const sizeInBytes = Buffer.byteLength(updatedData, 'utf8');
@@ -160,6 +171,9 @@ const copyIndexHTMLIntoDistAndStartServer = async (hashedFileNames: Record<strin
 
   if (serve && !serverStarted) {
     startServer();
+  } else if (serve && !isProd) {
+    // Notify all connected SSE clients to reload
+    notifyLiveReloadClients();
   }
 };
 
@@ -191,6 +205,19 @@ const startServer = (port: number = serverPort): void => {
     const indexPath = path.join(distDir, 'index.html');
     const hasFileExtension = path.extname(requestedUrl).length > 0;
 
+    // SSE endpoint for live reload (dev only)
+    if (requestedUrl === '/__live-reload' && !isProd) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+      sseClients.push(res);
+      req.on('close', () => {
+        sseClients = sseClients.filter((client) => client !== res);
+      });
+      return;
+    }
+
     // Serve static file if it exists and is a file
     if (fs.existsSync(requestedPath) && fs.statSync(requestedPath).isFile()) {
       res.setHeader('Content-Type', getContentType(requestedUrl));
@@ -221,10 +248,20 @@ const startServer = (port: number = serverPort): void => {
   const url = `http://localhost:${port}/`;
   server.listen(port, () => {
     console.info(consoleColors.yellow, `Server running at ${url}`);
+    if (!isProd) {
+      console.info(consoleColors.cyan, 'Live reload enabled');
+    }
     console.info('');
     console.info('');
     serverStarted = true;
   });
+};
+
+// LIVE RELOAD ----------------------------------------------------------------------------------------------------------------------------
+const notifyLiveReloadClients = (): void => {
+  for (const client of sseClients) {
+    client.write('data: reload\n\n');
+  }
 };
 
 // B3: Convert to async/await
