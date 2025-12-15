@@ -12,12 +12,37 @@ import {
   ReactiveBindingPlugin,
   RegisterComponentStripperPlugin,
   HTMLBootstrapInjectorPlugin,
+  MinificationPlugin,
   PostBuildPlugin,
 } from './plugins/index.js';
 
 // ============================================================================
 // ESBuild Configuration
 // ============================================================================
+
+// Base plugins used in both dev and prod
+const basePlugins = [
+  TypeCheckPlugin, // 1. Validate TypeScript
+  RoutesPrecompilerPlugin, // 2. Inject page selectors into routes
+  ComponentPrecompilerPlugin, // 3. CTFE for component HTML generation
+  ReactiveBindingPlugin, // 4. Compile reactive signal bindings
+  RegisterComponentStripperPlugin, // 5. Remove compile-time-only code
+  HTMLBootstrapInjectorPlugin, // 6. Inject root component HTML into index.html
+];
+
+// Production adds MinificationPlugin (requires write: false)
+const prodPlugins = [
+  ...basePlugins,
+  MinificationPlugin, // 7. Minify selectors + HTML/CSS templates (prod only)
+  PostBuildPlugin, // 8. Copy assets, update HTML, start server
+];
+
+// Dev skips minification
+const devPlugins = [
+  ...basePlugins,
+  PostBuildPlugin, // 7. Copy assets, update HTML, start server
+];
+
 const BaseConfig: BuildOptions = {
   entryPoints: entryPoints,
   bundle: true,
@@ -28,29 +53,23 @@ const BaseConfig: BuildOptions = {
   splitting: true,
   format: 'esm',
   sourcemap: false,
-  write: true,
   metafile: true,
   entryNames: '[name]-[hash]',
   chunkNames: '[name]-[hash]',
-  plugins: [
-    TypeCheckPlugin, // 1. Validate TypeScript
-    RoutesPrecompilerPlugin, // 2. Inject page selectors into routes
-    ComponentPrecompilerPlugin, // 3. CTFE for component HTML generation
-    ReactiveBindingPlugin, // 4. Compile reactive signal bindings
-    RegisterComponentStripperPlugin, // 5. Remove compile-time-only code
-    HTMLBootstrapInjectorPlugin, // 6. Inject root component HTML into index.html
-    PostBuildPlugin, // 7. Copy assets, update HTML, start server
-  ],
 };
 
 const DevConfig: BuildOptions = {
   ...BaseConfig,
   minify: false,
+  write: true, // Dev: let esbuild write files directly
+  plugins: devPlugins,
 };
 
 const ProdConfig: BuildOptions = {
   ...BaseConfig,
   minify: true,
+  write: false, // Prod: MinificationPlugin handles writing after processing
+  plugins: prodPlugins,
 };
 
 // ============================================================================

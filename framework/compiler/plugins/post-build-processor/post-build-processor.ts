@@ -63,10 +63,21 @@ const processMetafileAndUpdateHTML = async (metafile: Metafile): Promise<void> =
     index: '',
   };
 
-  // Find hashed filenames from metafile and collect sizes
+  // Find hashed filenames from metafile and get ACTUAL file sizes from disk
+  // (after minification has been applied)
   for (const [outputPath, info] of Object.entries(outputs)) {
     const fileName = path.basename(outputPath);
-    const sizeInBytes = info.bytes;
+
+    // Get actual file size from disk (post-minification)
+    const fullPath = path.join(distDir, fileName);
+    let sizeInBytes = info.bytes; // Fallback to metafile size
+    try {
+      const stats = await fs.promises.stat(fullPath);
+      sizeInBytes = stats.size;
+    } catch {
+      // File might not exist yet in some edge cases, use metafile size
+    }
+
     totalBundleSizeInBytes += sizeInBytes;
     fileSizeLog.push({ fileName, sizeInBytes });
 
@@ -125,7 +136,11 @@ const copyIndexHTMLIntoDistAndStartServer = async (hashedFileNames: Record<strin
 
   // Inject bootstrap HTML if available
   const { injectBootstrapHTML } = await import('../html-bootstrap-injector/html-bootstrap-injector.js');
-  const updatedData = injectBootstrapHTML(data);
+  let updatedData = injectBootstrapHTML(data);
+
+  // Apply selector minification to index.html (production only)
+  const { minifySelectorsInHTML } = await import('../minification/minification.js');
+  updatedData = minifySelectorsInHTML(updatedData);
 
   await fs.promises.writeFile(outputHTMLFilePath, updatedData, 'utf8');
 

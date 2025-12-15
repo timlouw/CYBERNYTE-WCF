@@ -23,5 +23,8 @@ export { RegisterComponentStripperPlugin } from './register-component-stripper/r
 // 6. HTML Bootstrap Injector - Injects root component HTML into index.html at build time
 export { HTMLBootstrapInjectorPlugin, injectBootstrapHTML } from './html-bootstrap-injector/html-bootstrap-injector.js';
 
-// 7. Post Build Processor - Copies assets, updates HTML, starts dev server
+// 7. Minification - Production-only selector and template minification
+export { MinificationPlugin, minifySelectorsInHTML } from './minification/minification.js';
+
+// 8. Post Build Processor - Copies assets, updates HTML, starts dev server
 export { PostBuildPlugin } from './post-build-processor/post-build-processor.js';
