@@ -7,6 +7,7 @@ import type { Application, Environment } from './types.js';
 export const environment: Environment = (process.argv[2] as Environment) ?? 'dev';
 export const application: Application = (process.argv[3] as Application) ?? 'client';
 export const serve: boolean = !!process.argv[4];
+export const useGzip: boolean = process.argv.includes('gzip');
 export const isProd: boolean = environment === 'prod';
 
 // ============================================================================

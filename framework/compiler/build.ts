@@ -47,6 +47,7 @@ const BaseConfig: BuildOptions = {
   entryPoints: entryPoints,
   bundle: true,
   platform: 'browser',
+  target: ['es2020', 'chrome90', 'firefox88', 'safari14', 'edge90'], // Modern browsers for smaller output
   outdir: distDir,
   treeShaking: true,
   logLevel: 'error',
@@ -56,6 +57,7 @@ const BaseConfig: BuildOptions = {
   metafile: true,
   entryNames: '[name]-[hash]',
   chunkNames: '[name]-[hash]',
+  legalComments: 'none', // Remove license comments
 };
 
 const DevConfig: BuildOptions = {
@@ -68,6 +70,10 @@ const DevConfig: BuildOptions = {
 const ProdConfig: BuildOptions = {
   ...BaseConfig,
   minify: true,
+  minifyWhitespace: true,
+  minifyIdentifiers: true,
+  minifySyntax: true,
+  drop: ['console', 'debugger'], // Remove console.log and debugger statements
   write: false, // Prod: MinificationPlugin handles writing after processing
   plugins: prodPlugins,
 };

@@ -2,8 +2,9 @@ import fs from 'fs';
 import http from 'http';
 import path from 'path';
 import readline from 'readline';
+import zlib from 'zlib';
 import { Metafile, Plugin } from 'esbuild';
-import { assetsInputDir, assetsOutputDir, distDir, inputHTMLFilePath, outputHTMLFilePath, serve, isProd } from '../../config.js';
+import { assetsInputDir, assetsOutputDir, distDir, inputHTMLFilePath, outputHTMLFilePath, serve, isProd, useGzip } from '../../config.js';
 import { consoleColors, ansi, PLUGIN_NAME, sourceCache, getContentType } from '../../utils/index.js';
 
 const NAME = PLUGIN_NAME.POST_BUILD;
@@ -105,7 +106,7 @@ const getSizeColor = (sizeInBytes: number, maxSize: number): string => {
   return '\x1b[31m'; // red
 };
 
-const printAllFileSizes = (): void => {
+const printAllFileSizes = async (): Promise<void> => {
   const maxSize = Math.max(...fileSizeLog.map((f) => f.sizeInBytes));
   const cyanColor = '\x1b[36m';
   const { reset } = consoleColors;
@@ -113,7 +114,31 @@ const printAllFileSizes = (): void => {
   for (const { fileName, sizeInBytes } of fileSizeLog) {
     const sizeInKilobytes = sizeInBytes / 1024;
     const sizeColor = getSizeColor(sizeInBytes, maxSize);
-    console.info(`${cyanColor}${fileName}${reset}  ${sizeColor}Size: ${sizeInKilobytes.toFixed(2)} KB${reset}`);
+    let sizeInfo = `${sizeColor}Size: ${sizeInKilobytes.toFixed(2)} KB${reset}`;
+
+    // Show compressed sizes if gzip is enabled
+    if (useGzip) {
+      const gzipPath = path.join(distDir, fileName + '.gz');
+      const brotliPath = path.join(distDir, fileName + '.br');
+      const greenColor = '\x1b[32m';
+
+      if (fs.existsSync(gzipPath)) {
+        const gzipStats = await fs.promises.stat(gzipPath);
+        const gzipSizeKB = gzipStats.size / 1024;
+        sizeInfo += ` ${greenColor}(gzip: ${gzipSizeKB.toFixed(2)} KB`;
+
+        if (fs.existsSync(brotliPath)) {
+          const brotliStats = await fs.promises.stat(brotliPath);
+          const brotliSizeKB = brotliStats.size / 1024;
+          sizeInfo += `, br: ${brotliSizeKB.toFixed(2)} KB)`;
+        } else {
+          sizeInfo += `)`;
+        }
+        sizeInfo += reset;
+      }
+    }
+
+    console.info(`${cyanColor}${fileName}${reset}  ${sizeInfo}`);
   }
 };
 
@@ -161,10 +186,39 @@ const copyIndexHTMLIntoDistAndStartServer = async (hashedFileNames: Record<strin
 
   const totalSizeInKilobytes = totalBundleSizeInBytes / 1024;
 
+  // Gzip files if flag is enabled (do this before printing sizes)
+  if (useGzip) {
+    await gzipDistFiles();
+  }
+
   // D3: Batch console output
-  printAllFileSizes();
-  console.info(consoleColors.green, `=== TOTAL BUNDLE SIZE: ${totalBundleSizeInBytes.toFixed(2)} B ===`);
-  console.info(consoleColors.green, `=== TOTAL BUNDLE SIZE: ${totalSizeInKilobytes.toFixed(2)} KB ===`);
+  await printAllFileSizes();
+  console.info(consoleColors.green, `=== TOTAL BUNDLE SIZE: ${totalBundleSizeInBytes.toFixed(2)} B (${totalSizeInKilobytes.toFixed(2)} KB) ===`);
+
+  // Show total gzipped size if enabled
+  if (useGzip) {
+    let totalGzippedSize = 0;
+    let totalBrotliSize = 0;
+    for (const { fileName } of fileSizeLog) {
+      const gzipPath = path.join(distDir, fileName + '.gz');
+      const brotliPath = path.join(distDir, fileName + '.br');
+
+      if (fs.existsSync(gzipPath)) {
+        const stats = await fs.promises.stat(gzipPath);
+        totalGzippedSize += stats.size;
+      }
+
+      if (fs.existsSync(brotliPath)) {
+        const stats = await fs.promises.stat(brotliPath);
+        totalBrotliSize += stats.size;
+      }
+    }
+    const totalGzippedKB = totalGzippedSize / 1024;
+    const totalBrotliKB = totalBrotliSize / 1024;
+    console.info(consoleColors.green, `=== TOTAL GZIPPED: ${totalGzippedSize.toFixed(2)} B (${totalGzippedKB.toFixed(2)} KB) ===`);
+    console.info(consoleColors.green, `=== TOTAL BROTLI: ${totalBrotliSize.toFixed(2)} B (${totalBrotliKB.toFixed(2)} KB) ===`);
+  }
+
   console.info('');
 
   fileSizeLog.length = 0;
@@ -198,6 +252,40 @@ const promptForPort = (): Promise<number> => {
   });
 };
 
+// Dynamic compression helper
+const compressAndServe = (filePath: string, req: http.IncomingMessage, res: http.ServerResponse, contentType: string, cacheControl: string): void => {
+  const acceptEncoding = req.headers['accept-encoding'] || '';
+  const canCompress = useGzip && !contentType.startsWith('image/') && !contentType.startsWith('video/') && !contentType.startsWith('audio/');
+
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Cache-Control', cacheControl);
+
+  if (canCompress) {
+    res.setHeader('Vary', 'Accept-Encoding');
+
+    // Prefer Brotli for best compression
+    if (acceptEncoding.includes('br')) {
+      res.setHeader('Content-Encoding', 'br');
+      const brotli = zlib.createBrotliCompress({
+        params: {
+          [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
+          [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
+          [zlib.constants.BROTLI_PARAM_LGWIN]: 24,
+        },
+      });
+      fs.createReadStream(filePath).pipe(brotli).pipe(res);
+    } else if (acceptEncoding.includes('gzip')) {
+      res.setHeader('Content-Encoding', 'gzip');
+      const gzip = zlib.createGzip({ level: 9 });
+      fs.createReadStream(filePath).pipe(gzip).pipe(res);
+    } else {
+      fs.createReadStream(filePath).pipe(res);
+    }
+  } else {
+    fs.createReadStream(filePath).pipe(res);
+  }
+};
+
 const startServer = (port: number = serverPort): void => {
   const server = http.createServer((req, res) => {
     const requestedUrl = req.url || '/';
@@ -220,13 +308,11 @@ const startServer = (port: number = serverPort): void => {
 
     // Serve static file if it exists and is a file
     if (fs.existsSync(requestedPath) && fs.statSync(requestedPath).isFile()) {
-      res.setHeader('Content-Type', getContentType(requestedUrl));
-      fs.createReadStream(requestedPath).pipe(res);
+      compressAndServe(requestedPath, req, res, getContentType(requestedUrl), 'public, max-age=31536000, immutable');
     }
     // SPA fallback: serve index.html for routes without file extensions (client-side routing)
     else if (!hasFileExtension) {
-      res.setHeader('Content-Type', 'text/html');
-      fs.createReadStream(indexPath).pipe(res);
+      compressAndServe(indexPath, req, res, 'text/html', 'no-cache');
     }
     // 404 for missing files with extensions
     else {
@@ -315,4 +401,70 @@ const watchAndRecursivelyCopyAssetsIntoDist = (src: string, dest: string): void 
       }
     }
   });
+};
+
+// GZIP COMPRESSION ----------------------------------------------------------------------------------------------------------------------------
+/**
+ * Recursively compress all files in the dist directory with both gzip and brotli
+ * Creates .gz and .br versions alongside original files
+ */
+const gzipDistFiles = async (): Promise<void> => {
+  const compressFile = async (filePath: string): Promise<void> => {
+    const gzipPath = filePath + '.gz';
+    const brotliPath = filePath + '.br';
+
+    // Gzip compression
+    await new Promise<void>((resolve, reject) => {
+      const readStream = fs.createReadStream(filePath);
+      const writeStream = fs.createWriteStream(gzipPath);
+      const gzip = zlib.createGzip({ level: 9 }); // Maximum compression
+
+      readStream
+        .pipe(gzip)
+        .pipe(writeStream)
+        .on('finish', () => resolve())
+        .on('error', reject);
+    });
+
+    // Brotli compression with maximum settings
+    await new Promise<void>((resolve, reject) => {
+      // Read entire file for better compression
+      const content = fs.readFileSync(filePath);
+      const brotli = zlib.brotliCompressSync(content, {
+        params: {
+          [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
+          [zlib.constants.BROTLI_PARAM_QUALITY]: 11, // Max quality
+          [zlib.constants.BROTLI_PARAM_LGWIN]: 24, // Max window
+          [zlib.constants.BROTLI_PARAM_LGBLOCK]: 0, // Auto
+          [zlib.constants.BROTLI_PARAM_SIZE_HINT]: content.length,
+        },
+      });
+      fs.writeFileSync(brotliPath, brotli);
+      resolve();
+    });
+  };
+
+  const processDirectory = async (dir: string): Promise<void> => {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        await processDirectory(fullPath);
+      } else if (entry.isFile() && !entry.name.endsWith('.gz') && !entry.name.endsWith('.br')) {
+        // Only compress text-based files (HTML, JS, CSS, etc.)
+        const ext = path.extname(entry.name).toLowerCase();
+        const compressibleExtensions = ['.html', '.js', '.css', '.json', '.svg', '.txt', '.xml'];
+
+        if (compressibleExtensions.includes(ext)) {
+          await compressFile(fullPath);
+        }
+      }
+    }
+  };
+
+  console.info(consoleColors.blue, 'Compressing files with gzip and brotli...');
+  await processDirectory(distDir);
+  console.info(consoleColors.green, 'Compression complete');
 };
