@@ -1,5 +1,6 @@
 {
   "type": "module",
+  "license": "MIT",
   "scripts": {
     "start": "bun framework/compiler/build.ts dev client serve",
     "start-prod": "bun framework/compiler/build.ts prod client serve",
