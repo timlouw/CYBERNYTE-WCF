@@ -471,7 +471,7 @@ function findBindingsInAttributes(element: HtmlElement, bindings: BindingInfo[])
             signals.push(signalMatch[1]);
           }
         }
-        
+
         if (signals.length > 0) {
           bindings.push({
             element,

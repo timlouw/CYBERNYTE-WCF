@@ -207,12 +207,12 @@ const processHtmlTemplateWithConditionals = (
   // First pass: Process conditionals and assign IDs
   for (const condEl of conditionalElements) {
     // Find the 'if' binding for this element to get parsed expression info
-    const ifBinding = parsed.bindings.find(b => b.element === condEl && b.type === 'if');
+    const ifBinding = parsed.bindings.find((b) => b.element === condEl && b.type === 'if');
     if (!ifBinding || !ifBinding.jsExpression) continue;
 
     const signalNames = ifBinding.signalNames || [ifBinding.signalName];
     const jsExpression = ifBinding.jsExpression;
-    
+
     const conditionalId = `b${idCounter++}`;
     elementIdMap.set(condEl, conditionalId);
 
@@ -539,9 +539,9 @@ const generateConsolidatedSubscription = (signalName: string, bindings: BindingI
     const update = generateBindingUpdateCode(bindings[0]);
     return `this.${signalName}.subscribe(v => { ${update}; }, true)`;
   }
-  
+
   // Multiple bindings - consolidate into single subscription with skipInitial
-  const updates = bindings.map(b => `      ${generateBindingUpdateCode(b)};`).join('\n');
+  const updates = bindings.map((b) => `      ${generateBindingUpdateCode(b)};`).join('\n');
   return `this.${signalName}.subscribe(v => {\n${updates}\n    }, true)`;
 };
 
@@ -613,13 +613,13 @@ const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: Con
 
     // Check if this is a simple single-signal expression or a complex one
     const isSimpleExpr = cond.signalNames.length === 1 && cond.jsExpression === `this.${cond.signalName}()`;
-    
+
     if (isSimpleExpr) {
       // Simple case: use __bindIf with the signal directly
       lines.push(`    ${BIND_FN.IF}(r, this.${cond.signalName}, '${cond.id}', \`${escapedTemplate}\`, ${nestedCode});`);
     } else {
       // Complex case: use __bindIfExpr with signals array and evaluator function
-      const signalsArray = cond.signalNames.map(s => `this.${s}`).join(', ');
+      const signalsArray = cond.signalNames.map((s) => `this.${s}`).join(', ');
       lines.push(`    ${BIND_FN.IF_EXPR}(r, [${signalsArray}], () => ${cond.jsExpression}, '${cond.id}', \`${escapedTemplate}\`, ${nestedCode});`);
     }
   }
@@ -732,15 +732,11 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     if (allBindings.some((b) => b.type === 'style')) requiredFunctions.push(BIND_FN.STYLE);
     if (allBindings.some((b) => b.type === 'attr')) requiredFunctions.push(BIND_FN.ATTR);
     if (allBindings.some((b) => b.type === 'text')) requiredFunctions.push(BIND_FN.TEXT);
-    
+
     // Check if we need simple __bindIf or complex __bindIfExpr
-    const hasSimpleConditionals = allConditionals.some(c => 
-      c.signalNames.length === 1 && c.jsExpression === `this.${c.signalName}()`
-    );
-    const hasComplexConditionals = allConditionals.some(c => 
-      c.signalNames.length > 1 || c.jsExpression !== `this.${c.signalName}()`
-    );
-    
+    const hasSimpleConditionals = allConditionals.some((c) => c.signalNames.length === 1 && c.jsExpression === `this.${c.signalName}()`);
+    const hasComplexConditionals = allConditionals.some((c) => c.signalNames.length > 1 || c.jsExpression !== `this.${c.signalName}()`);
+
     if (hasSimpleConditionals) requiredFunctions.push(BIND_FN.IF);
     if (hasComplexConditionals) requiredFunctions.push(BIND_FN.IF_EXPR);
 

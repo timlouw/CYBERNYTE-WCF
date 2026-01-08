@@ -96,14 +96,7 @@ export const __bindIf = (root: ShadowRoot, signal: Signal<any>, id: string, temp
  * Bind conditional rendering with a complex expression using visibility toggling.
  * Uses display:none instead of DOM removal to avoid layout shifts.
  */
-export const __bindIfExpr = (
-  root: ShadowRoot,
-  signals: Signal<any>[],
-  evalExpr: () => boolean,
-  id: string,
-  template: string,
-  initNested: () => (() => void)[],
-): (() => void) => {
+export const __bindIfExpr = (root: ShadowRoot, signals: Signal<any>[], evalExpr: () => boolean, id: string, template: string, initNested: () => (() => void)[]): (() => void) => {
   let cleanups: (() => void)[] = [];
   let el = root.getElementById(id);
   const isTemplate = el?.tagName === 'TEMPLATE';
