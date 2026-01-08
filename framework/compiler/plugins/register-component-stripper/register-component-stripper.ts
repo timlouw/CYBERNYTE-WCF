@@ -41,7 +41,8 @@ const NAME = PLUGIN_NAME.STRIPPER;
 export const RegisterComponentStripperPlugin: Plugin = {
   name: NAME,
   setup(build) {
-    // Handle shadow-dom.ts - strip the registerComponent return code
+    // Handle shadow-dom.ts - strip only the component return code (else branch)
+    // Keep the page return since mount() needs it at runtime
     build.onLoad({ filter: /shadow-dom\.ts$/ }, async (args) => {
       try {
         const source = await fs.promises.readFile(args.path, 'utf8');
@@ -65,12 +66,15 @@ export const RegisterComponentStripperPlugin: Plugin = {
                   ts.isStringLiteral(condition.right) &&
                   condition.right.text === COMPONENT_TYPE.PAGE
                 ) {
-                  // This is the return code block - mark it for removal
-                  removals.push({
-                    start: statement.getStart(sourceFile),
-                    end: statement.getEnd(),
-                    description: 'registerComponent return if-block',
-                  });
+                  // Only remove the else branch (component return with createComponentHTMLSelector)
+                  // Keep the page return since mount() needs it at runtime
+                  if (statement.elseStatement) {
+                    removals.push({
+                      start: statement.elseStatement.getStart(sourceFile) - 5, // Include 'else' keyword
+                      end: statement.elseStatement.getEnd(),
+                      description: 'registerComponent else-branch (component return)',
+                    });
+                  }
                 }
               }
             }

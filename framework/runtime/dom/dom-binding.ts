@@ -41,9 +41,12 @@ export const __bindText = (root: ShadowRoot, signal: Signal<any>, id: string): v
   });
 };
 
+// Reusable template element for creating content
+const tempEl = document.createElement('template');
+
 /**
- * Bind conditional rendering using <template> as placeholder.
- * When signal is truthy, content is shown. When falsy, replaced with <template>.
+ * Bind conditional rendering using visibility toggling to prevent CLS.
+ * Uses display:none instead of DOM removal to avoid layout shifts.
  *
  * @param root - Shadow root to search in
  * @param signal - Signal controlling visibility
@@ -54,49 +57,93 @@ export const __bindText = (root: ShadowRoot, signal: Signal<any>, id: string): v
  */
 export const __bindIf = (root: ShadowRoot, signal: Signal<any>, id: string, template: string, initNested: () => (() => void)[]): (() => void) => {
   let cleanups: (() => void)[] = [];
-  let isShown = root.getElementById(id)?.tagName !== 'TEMPLATE';
+  let el = root.getElementById(id);
+  const isTemplate = el?.tagName === 'TEMPLATE';
 
-  // If already shown (initialValue was true), init nested bindings now
-  if (isShown) {
+  // If it's a template placeholder, we need to insert the actual content first (hidden)
+  if (isTemplate && el) {
+    tempEl.innerHTML = template;
+    const content = tempEl.content.firstElementChild as HTMLElement;
+    if (content) {
+      content.style.display = 'none';
+      el.replaceWith(content);
+      el = root.getElementById(id);
+    }
+  }
+
+  // Now el is the actual element - init bindings
+  if (el) {
     cleanups = initNested();
   }
 
+  // Subscribe and toggle visibility via display
   const unsubscribe = signal.subscribe((value) => {
     const shouldShow = Boolean(value);
-    if (shouldShow === isShown) return;
-
-    if (shouldShow) {
-      // Show: Replace <template> placeholder with actual content
-      const placeholder = root.getElementById(id) as HTMLTemplateElement;
-      if (!placeholder || placeholder.tagName !== 'TEMPLATE') return;
-
-      const temp = document.createElement('template');
-      temp.innerHTML = template;
-      placeholder.replaceWith(temp.content);
-
-      // Initialize nested bindings (elements now exist in DOM, refs will be cached)
-      cleanups = initNested();
-    } else {
-      // Hide: First cleanup subscriptions (releases element refs in closures)
-      cleanups.forEach((fn) => fn());
-      cleanups = [];
-
-      // Then replace content with <template> placeholder
-      const el = root.getElementById(id);
-      if (!el) return;
-
-      const placeholder = document.createElement('template');
-      placeholder.id = id;
-      el.replaceWith(placeholder);
+    const currentEl = root.getElementById(id) as HTMLElement;
+    if (currentEl) {
+      currentEl.style.display = shouldShow ? '' : 'none';
     }
+  }, false); // Don't skip initial - we want to set initial visibility
 
-    isShown = shouldShow;
-  });
-
-  // Return cleanup for this binding itself (for parent conditional cleanup)
   return () => {
     unsubscribe();
-    cleanups.forEach((fn) => fn());
+    for (let i = 0; i < cleanups.length; i++) cleanups[i]();
+    cleanups = [];
+  };
+};
+
+/**
+ * Bind conditional rendering with a complex expression using visibility toggling.
+ * Uses display:none instead of DOM removal to avoid layout shifts.
+ */
+export const __bindIfExpr = (
+  root: ShadowRoot,
+  signals: Signal<any>[],
+  evalExpr: () => boolean,
+  id: string,
+  template: string,
+  initNested: () => (() => void)[],
+): (() => void) => {
+  let cleanups: (() => void)[] = [];
+  let el = root.getElementById(id);
+  const isTemplate = el?.tagName === 'TEMPLATE';
+
+  // If it's a template placeholder, insert actual content first (hidden)
+  if (isTemplate && el) {
+    tempEl.innerHTML = template;
+    const content = tempEl.content.firstElementChild as HTMLElement;
+    if (content) {
+      content.style.display = 'none';
+      el.replaceWith(content);
+      el = root.getElementById(id);
+    }
+  }
+
+  // Init bindings
+  if (el) {
+    cleanups = initNested();
+  }
+
+  const update = () => {
+    const shouldShow = Boolean(evalExpr());
+    const currentEl = root.getElementById(id) as HTMLElement;
+    if (currentEl) {
+      currentEl.style.display = shouldShow ? '' : 'none';
+    }
+  };
+
+  // Subscribe to all signals
+  const unsubscribes = new Array(signals.length);
+  for (let i = 0; i < signals.length; i++) {
+    unsubscribes[i] = signals[i].subscribe(update, false);
+  }
+
+  // Set initial state
+  update();
+
+  return () => {
+    for (let i = 0; i < unsubscribes.length; i++) unsubscribes[i]();
+    for (let i = 0; i < cleanups.length; i++) cleanups[i]();
     cleanups = [];
   };
 };

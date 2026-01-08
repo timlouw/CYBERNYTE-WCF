@@ -57,10 +57,13 @@ export interface BindingInfo {
   element: HtmlElement;
   type: 'text' | 'style' | 'attr' | 'if';
   signalName: string;
+  signalNames?: string[]; // For complex if expressions with multiple signals
   property?: string; // For style/attr bindings
   expressionStart: number; // Position of ${
   expressionEnd: number; // Position after }
   fullExpression: string; // The full ${this.signal()} string
+  /** For 'if' bindings: the inner JS expression (without ${...}) */
+  jsExpression?: string;
 }
 
 export interface ParsedTemplate {
@@ -455,16 +458,32 @@ function findBindingsInAttributes(element: HtmlElement, bindings: BindingInfo[])
   for (const [name, attr] of element.attributes) {
     // Check for if directive
     if (name === 'if') {
-      const ifMatch = attr.value.match(/^\$\{this\.(\w+)\(\)\}$/);
-      if (ifMatch) {
-        bindings.push({
-          element,
-          type: 'if',
-          signalName: ifMatch[1],
-          expressionStart: attr.valueStart,
-          expressionEnd: attr.valueEnd,
-          fullExpression: attr.value,
-        });
+      // Match ${...} and extract inner expression
+      const exprMatch = attr.value.match(/^\$\{(.+)\}$/);
+      if (exprMatch) {
+        const innerExpr = exprMatch[1];
+        // Find all signal getters: this.signalName() patterns
+        const signalRegex = /this\.(\w+)\(\)/g;
+        const signals: string[] = [];
+        let signalMatch: RegExpExecArray | null;
+        while ((signalMatch = signalRegex.exec(innerExpr)) !== null) {
+          if (!signals.includes(signalMatch[1])) {
+            signals.push(signalMatch[1]);
+          }
+        }
+        
+        if (signals.length > 0) {
+          bindings.push({
+            element,
+            type: 'if',
+            signalName: signals[0], // Primary signal (for backwards compatibility)
+            signalNames: signals, // All signals in the expression
+            expressionStart: attr.valueStart,
+            expressionEnd: attr.valueEnd,
+            fullExpression: attr.value,
+            jsExpression: innerExpr, // The raw JS expression like "!this._loading()"
+          });
+        }
       }
       continue;
     }

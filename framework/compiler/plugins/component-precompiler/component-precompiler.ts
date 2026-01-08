@@ -436,7 +436,7 @@ const findComponentCallsCTFE = (
  * - The vm module actually executes JavaScript during compilation
  * - Props are evaluated by running the actual expression code
  * - The HTML generation uses the same logic as runtime
- * - No manual reimplementation of expression evaluation
+ * - No manual re-implementation of expression evaluation
  */
 export const ComponentPrecompilerPlugin: Plugin = {
   name: NAME,

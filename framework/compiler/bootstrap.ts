@@ -47,15 +47,12 @@ type PageComponent = `<${string}></${string}>`;
  * mount(AppComponent, document.body);
  * ```
  */
-export function mount(component: PageComponent, _target?: Element | null): void {
-  // This function body is intentionally empty.
-  // It exists only to provide type checking at development time.
-  // The compiler will:
-  // 1. Find the imported component variable
-  // 2. Trace it to its registerComponent() definition
-  // 3. Extract the selector from that definition
-  // 4. Strip this entire call from the output
-  //
-  // No runtime code is generated.
-  void component;
+export function mount(component: PageComponent, target: Element | null = document.body): void {
+  // Extract tag name from the component string (e.g., "<my-app></my-app>" -> "my-app")
+  const match = component.match(/^<([a-z][a-z0-9-]*)>/i);
+  if (!match || !target) return;
+
+  // Dynamically create and append the element - avoids CLS by not pre-rendering in HTML
+  const element = document.createElement(match[1]);
+  target.appendChild(element);
 }

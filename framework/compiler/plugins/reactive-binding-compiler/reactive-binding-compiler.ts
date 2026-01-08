@@ -57,7 +57,9 @@ const NAME = PLUGIN_NAME.REACTIVE;
 
 interface ConditionalBlock {
   id: string;
-  signalName: string;
+  signalName: string; // Primary signal (for simple cases)
+  signalNames: string[]; // All signals in the expression
+  jsExpression: string; // The full JS expression e.g. "!this._loading()" or "this._a() && this._b()"
   initialValue: boolean;
   templateContent: string; // HTML to insert when true
   startIndex: number; // Position in HTML where the element/block starts
@@ -204,15 +206,31 @@ const processHtmlTemplateWithConditionals = (
 
   // First pass: Process conditionals and assign IDs
   for (const condEl of conditionalElements) {
-    const ifAttr = condEl.attributes.get('if')!;
-    const ifMatch = ifAttr.value.match(/^\$\{this\.(\w+)\(\)\}$/);
-    if (!ifMatch) continue;
+    // Find the 'if' binding for this element to get parsed expression info
+    const ifBinding = parsed.bindings.find(b => b.element === condEl && b.type === 'if');
+    if (!ifBinding || !ifBinding.jsExpression) continue;
 
-    const signalName = ifMatch[1];
+    const signalNames = ifBinding.signalNames || [ifBinding.signalName];
+    const jsExpression = ifBinding.jsExpression;
+    
     const conditionalId = `b${idCounter++}`;
     elementIdMap.set(condEl, conditionalId);
 
-    const initialValue = Boolean(signalInitializers.get(signalName));
+    // Evaluate initial value by replacing signal getters with their initial values
+    let evalExpr = jsExpression;
+    for (const sigName of signalNames) {
+      const initialVal = signalInitializers.get(sigName);
+      // Replace this.signalName() with the actual initial value
+      const sigRegex = new RegExp(`this\\.${sigName}\\(\\)`, 'g');
+      evalExpr = evalExpr.replace(sigRegex, JSON.stringify(initialVal ?? false));
+    }
+    // Safely evaluate the expression with initial values
+    let initialValue = false;
+    try {
+      initialValue = Boolean(eval(evalExpr));
+    } catch (e) {
+      // If evaluation fails, default to false
+    }
 
     // Get bindings for this conditional element and its children
     const condBindings = getBindingsForElement(condEl, parsed.bindings);
@@ -250,7 +268,9 @@ const processHtmlTemplateWithConditionals = (
 
     conditionals.push({
       id: conditionalId,
-      signalName,
+      signalName: signalNames[0], // Primary signal for backwards compatibility
+      signalNames,
+      jsExpression,
       initialValue,
       templateContent: processedCondHtml,
       startIndex: condEl.tagStart,
@@ -460,25 +480,74 @@ const generateProcessedHtml = (
 // ============================================================================
 
 /**
- * Generate binding code for a single binding (used for both top-level and nested)
- * For text bindings, uses .firstChild.data to update only the text node (minimal DOM mutation)
+ * Generate a single update statement for a binding (no subscribe wrapper)
+ * Returns the code that goes inside the subscription callback
  */
-const generateSingleBindingCode = (binding: BindingInfo, useCache: boolean): string => {
-  const elRef = useCache ? binding.id : `r.getElementById('${binding.id}')`;
+const generateBindingUpdateCode = (binding: BindingInfo): string => {
+  const elRef = binding.id;
 
   if (binding.type === 'style') {
     const prop = toCamelCase(binding.property!);
-    return `this.${binding.signalName}.subscribe(v => { ${elRef}.style.${prop} = v; })`;
+    return `${elRef}.style.${prop} = v`;
   } else if (binding.type === 'attr') {
-    return `this.${binding.signalName}.subscribe(v => { ${elRef}.setAttribute('${binding.property}', v); })`;
+    return `${elRef}.setAttribute('${binding.property}', v)`;
   } else {
     // Text binding: update text node directly for minimal DOM mutation
-    return `this.${binding.signalName}.subscribe(v => { ${elRef}.firstChild.data = v; })`;
+    return `${elRef}.firstChild.data = v`;
   }
 };
 
 /**
+ * Generate initial value assignment for a binding (no subscription)
+ * This sets the DOM value directly without going through subscribe
+ */
+const generateInitialValueCode = (binding: BindingInfo): string => {
+  const elRef = binding.id;
+  const signalCall = `this.${binding.signalName}()`;
+
+  if (binding.type === 'style') {
+    const prop = toCamelCase(binding.property!);
+    return `${elRef}.style.${prop} = ${signalCall}`;
+  } else if (binding.type === 'attr') {
+    return `${elRef}.setAttribute('${binding.property}', ${signalCall})`;
+  } else {
+    // Text binding
+    return `${elRef}.firstChild.data = ${signalCall}`;
+  }
+};
+
+/**
+ * Group bindings by signal name for consolidated subscriptions
+ */
+const groupBindingsBySignal = (bindings: BindingInfo[]): Map<string, BindingInfo[]> => {
+  const groups = new Map<string, BindingInfo[]>();
+  for (const binding of bindings) {
+    const existing = groups.get(binding.signalName) || [];
+    existing.push(binding);
+    groups.set(binding.signalName, existing);
+  }
+  return groups;
+};
+
+/**
+ * Generate consolidated subscription code for a group of bindings to the same signal
+ * Uses skipInitial=true since initial values are set directly
+ */
+const generateConsolidatedSubscription = (signalName: string, bindings: BindingInfo[]): string => {
+  if (bindings.length === 1) {
+    // Single binding - use compact inline form with skipInitial
+    const update = generateBindingUpdateCode(bindings[0]);
+    return `this.${signalName}.subscribe(v => { ${update}; }, true)`;
+  }
+  
+  // Multiple bindings - consolidate into single subscription with skipInitial
+  const updates = bindings.map(b => `      ${generateBindingUpdateCode(b)};`).join('\n');
+  return `this.${signalName}.subscribe(v => {\n${updates}\n    }, true)`;
+};
+
+/**
  * Generate the complete initializeBindings function with cached refs and conditionals
+ * Optimized: sets initial values directly, then subscribes with skipInitial
  */
 const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: ConditionalBlock[]): string => {
   const lines: string[] = [];
@@ -498,9 +567,15 @@ const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: Con
     }
   }
 
-  // Generate subscriptions for top-level bindings
+  // Set initial values directly (no subscription overhead)
   for (const binding of topLevelBindings) {
-    lines.push(`    ${generateSingleBindingCode(binding, true)};`);
+    lines.push(`    ${generateInitialValueCode(binding)};`);
+  }
+
+  // Group bindings by signal and generate consolidated subscriptions (skipInitial)
+  const signalGroups = groupBindingsBySignal(topLevelBindings);
+  for (const [signalName, signalBindings] of signalGroups) {
+    lines.push(`    ${generateConsolidatedSubscription(signalName, signalBindings)};`);
   }
 
   // Generate conditional bindings
@@ -508,7 +583,7 @@ const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: Con
     const nestedBindings = cond.nestedBindings;
     const escapedTemplate = cond.templateContent.replace(/`/g, '\\`').replace(/\$/g, '\\$');
 
-    // Generate nested bindings initializer
+    // Generate nested bindings initializer with consolidated subscriptions
     let nestedCode = '() => []';
     if (nestedBindings.length > 0) {
       const nestedIds = [...new Set(nestedBindings.map((b) => b.id))];
@@ -520,16 +595,33 @@ const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: Con
         nestedLines.push(`      const ${id} = r.getElementById('${id}');`);
       }
 
-      nestedLines.push('      return [');
+      // Set initial values for nested bindings
       for (const binding of nestedBindings) {
-        nestedLines.push(`        ${generateSingleBindingCode(binding, true)},`);
+        nestedLines.push(`      ${generateInitialValueCode(binding)};`);
+      }
+
+      // Group nested bindings by signal and generate consolidated subscriptions
+      const nestedSignalGroups = groupBindingsBySignal(nestedBindings);
+      nestedLines.push('      return [');
+      for (const [signalName, signalBindings] of nestedSignalGroups) {
+        nestedLines.push(`        ${generateConsolidatedSubscription(signalName, signalBindings)},`);
       }
       nestedLines.push('      ];');
       nestedLines.push('    }');
       nestedCode = nestedLines.join('\n');
     }
 
-    lines.push(`    ${BIND_FN.IF}(r, this.${cond.signalName}, '${cond.id}', \`${escapedTemplate}\`, ${nestedCode});`);
+    // Check if this is a simple single-signal expression or a complex one
+    const isSimpleExpr = cond.signalNames.length === 1 && cond.jsExpression === `this.${cond.signalName}()`;
+    
+    if (isSimpleExpr) {
+      // Simple case: use __bindIf with the signal directly
+      lines.push(`    ${BIND_FN.IF}(r, this.${cond.signalName}, '${cond.id}', \`${escapedTemplate}\`, ${nestedCode});`);
+    } else {
+      // Complex case: use __bindIfExpr with signals array and evaluator function
+      const signalsArray = cond.signalNames.map(s => `this.${s}`).join(', ');
+      lines.push(`    ${BIND_FN.IF_EXPR}(r, [${signalsArray}], () => ${cond.jsExpression}, '${cond.id}', \`${escapedTemplate}\`, ${nestedCode});`);
+    }
   }
 
   lines.push('  };');
@@ -640,7 +732,17 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     if (allBindings.some((b) => b.type === 'style')) requiredFunctions.push(BIND_FN.STYLE);
     if (allBindings.some((b) => b.type === 'attr')) requiredFunctions.push(BIND_FN.ATTR);
     if (allBindings.some((b) => b.type === 'text')) requiredFunctions.push(BIND_FN.TEXT);
-    if (hasConditionals) requiredFunctions.push(BIND_FN.IF);
+    
+    // Check if we need simple __bindIf or complex __bindIfExpr
+    const hasSimpleConditionals = allConditionals.some(c => 
+      c.signalNames.length === 1 && c.jsExpression === `this.${c.signalName}()`
+    );
+    const hasComplexConditionals = allConditionals.some(c => 
+      c.signalNames.length > 1 || c.jsExpression !== `this.${c.signalName}()`
+    );
+    
+    if (hasSimpleConditionals) requiredFunctions.push(BIND_FN.IF);
+    if (hasComplexConditionals) requiredFunctions.push(BIND_FN.IF_EXPR);
 
     if (requiredFunctions.length > 0) {
       const newImport = generateUpdatedImport(servicesImport, requiredFunctions);

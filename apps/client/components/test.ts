@@ -8,39 +8,34 @@ interface MyElementProps {
 export const MyElementComponent = registerComponent<MyElementProps>(
   { selector: 'my-element', type: 'component' },
   class extends Component {
-    color = signal(this.getAttribute('color'));
-    text = signal('asdfs');
+    private _color = signal(this.getAttribute('color'));
+    private _text = signal('asdfs');
+    private _loading = signal(false);
+    private test = true;
 
     render = () => {
-      const update = () => {
-        this.color(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
-        this.text(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
-      };
-
-      update();
+      this._update();
 
       setTimeout(() => {
-        update();
-      }, 3000);
-
-      setTimeout(() => {
-        update();
-      }, 6000);
+        this._update();
+      }, 1500);
 
       return html`
-        <div class="box" style="background-color: ${this.color()}"></div>
-        <div class="box" style="background-color: ${this.color()}"></div>
-        <div class="box" style="background-color: ${this.color()}"></div>
-        <div class="box" style="background-color: ${this.color()}"></div>
-        <div class="box" style="background-color: ${this.color()}"></div>
-        <div class="box" style="background-color: ${this.color()}"></div>
-        <div class="box2">${this.text()}</div>
-        <div class="box2">${this.text()}</div>
-        <div class="box2">${this.text()}</div>
-        <div class="box2">${this.text()}</div>
-        <div class="box2">${this.text()}</div>
-        <div class="box2">${this.text()}</div>
+        <div class="box" style="background-color: ${this._color()}"></div>
+        <div class="box" style="background-color: ${this._color()}"></div>
+        <div if="${this._loading()}" class="box" style="background-color: ${this._color()}"></div>
+        <div if="${this._loading()}" class="box" style="background-color: ${this._color()}"></div>
+        <div class="box2">${this._text()}</div>
+        <div class="box2">${this._text()}</div>
+        <div if="${!this._loading() && this.test}" class="box2">${this._text()}</div>
+        <div if="${!this._loading() && this.test}" class="box2">${this._text()}</div>
       `;
+    };
+
+    private _update = () => {
+      this._color(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
+      this._text(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
+      this._loading(!this._loading());
     };
 
     static styles = css`

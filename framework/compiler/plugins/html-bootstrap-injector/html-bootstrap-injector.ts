@@ -321,14 +321,6 @@ const collectComponentDefinitions = async (): Promise<Map<string, ComponentDefin
 };
 
 /**
- * Generates the bootstrap HTML for a component.
- * This creates the custom element tag that will be rendered by the browser.
- */
-const generateBootstrapHTML = (selector: string): string => {
-  return `<${selector}></${selector}>`;
-};
-
-/**
  * Stores the bootstrap configuration for use by post-build processor.
  */
 let bootstrapConfig: BootstrapConfig | null = null;
@@ -376,46 +368,14 @@ export const HTMLBootstrapInjectorPlugin: Plugin = {
 /**
  * Injects the bootstrap HTML into the index.html content.
  * Called by the post-build processor.
+ *
+ * NOTE: HTML injection is disabled to prevent CLS (Cumulative Layout Shift).
+ * The mount() function now dynamically creates elements at runtime, similar to Lit.
+ * This provides better performance metrics (FCP/LCP scores stay the same,
+ * but CLS is dramatically reduced since no pre-rendered content shifts).
  */
 export const injectBootstrapHTML = (htmlContent: string): string => {
-  if (!bootstrapConfig) {
-    return htmlContent;
-  }
-
-  const bootstrapHTML = generateBootstrapHTML(bootstrapConfig.selector);
-  const { target } = bootstrapConfig;
-
-  // Target: document.body
-  if (target.type === 'body') {
-    // Check for placeholder in body
-    if (htmlContent.includes('<!-- BOOTSTRAP_HTML_PLACEHOLDER -->')) {
-      return htmlContent.replace('<!-- BOOTSTRAP_HTML_PLACEHOLDER -->', bootstrapHTML);
-    }
-
-    // Inject before closing </body> tag
-    const bodyCloseRegex = /<\/body>/i;
-    if (bodyCloseRegex.test(htmlContent)) {
-      return htmlContent.replace(bodyCloseRegex, `${bootstrapHTML}</body>`);
-    }
-
-    return htmlContent;
-  }
-
-  // Target: element with specific ID
-  if (target.type === 'element') {
-    const { id } = target;
-
-    // Match element with this ID and inject inside it
-    // Handles: <div id="root"></div> or <div id="root">content</div>
-    const elementRegex = new RegExp(`(<[^>]+\\bid=["']${id}["'][^>]*>)([\\s\\S]*?)(<\\/[^>]+>)`, 'i');
-    const match = htmlContent.match(elementRegex);
-
-    if (match) {
-      return htmlContent.replace(elementRegex, `$1${bootstrapHTML}$3`);
-    }
-
-    logger.warn(NAME, `Could not find element with id="${id}" in index.html`);
-  }
-
+  // Disabled - let mount() handle dynamic element creation at runtime
+  // This prevents the massive CLS caused by pre-rendered empty custom elements
   return htmlContent;
 };

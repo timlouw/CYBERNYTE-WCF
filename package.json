@@ -8,14 +8,12 @@
     "build": "bun framework/compiler/build.ts dev client",
     "build-prod": "bun framework/compiler/build.ts prod client",
     "build-prod-gzipped": "bun framework/compiler/build.ts prod client gzip",
-    "preview-vite": "vite preview --outDir dist/client --port 4201",
     "format": "bunx --bun prettier --write \"**/*.{ts,json,html}\"",
     "format:check": "bunx --bun prettier --check \"**/*.{ts,json,html}\"",
     "prepare": "husky"
   },
   "devDependencies": {
     "@types/bun": "^1.3.5",
-    "@types/node": "^25.0.3",
     "esbuild": "^0.27.1",
     "husky": "^9.1.7",
     "typescript": "^5.9.3"
