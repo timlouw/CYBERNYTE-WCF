@@ -171,8 +171,8 @@ const processHtmlTemplateWithConditionals = (
   templateContent: string,
   signalInitializers: Map<string, string | number | boolean>,
   startingId: number,
-): { 
-  processedContent: string; 
+): {
+  processedContent: string;
   bindings: BindingInfo[];
   conditionals: ConditionalBlock[];
   nextId: number;
@@ -180,18 +180,18 @@ const processHtmlTemplateWithConditionals = (
 } => {
   // Parse the HTML using the state machine parser
   const parsed = parseHtmlTemplate(templateContent);
-  
+
   const bindings: BindingInfo[] = [];
   const conditionals: ConditionalBlock[] = [];
   let idCounter = startingId;
-  
+
   // Track which elements need IDs and what ID they get
   const elementIdMap = new Map<HtmlElement, string>();
-  
+
   // Find all conditional elements (those with if attribute)
   const conditionalElements = findElementsWithAttribute(parsed.roots, 'if');
   const conditionalElementSet = new Set(conditionalElements);
-  
+
   // Create a set of all elements that are inside conditionals (for filtering)
   const elementsInsideConditionals = new Set<HtmlElement>();
   for (const condEl of conditionalElements) {
@@ -201,23 +201,23 @@ const processHtmlTemplateWithConditionals = (
       }
     });
   }
-  
+
   // First pass: Process conditionals and assign IDs
   for (const condEl of conditionalElements) {
     const ifAttr = condEl.attributes.get('if')!;
     const ifMatch = ifAttr.value.match(/^\$\{this\.(\w+)\(\)\}$/);
     if (!ifMatch) continue;
-    
+
     const signalName = ifMatch[1];
     const conditionalId = `b${idCounter++}`;
     elementIdMap.set(condEl, conditionalId);
-    
+
     const initialValue = Boolean(signalInitializers.get(signalName));
-    
+
     // Get bindings for this conditional element and its children
     const condBindings = getBindingsForElement(condEl, parsed.bindings);
     const nestedBindings: BindingInfo[] = [];
-    
+
     for (const binding of condBindings) {
       // Get or assign ID for the element
       let elementId: string;
@@ -231,10 +231,10 @@ const processHtmlTemplateWithConditionals = (
         }
         elementId = elementIdMap.get(binding.element)!;
       }
-      
+
       // Skip the 'if' binding itself
       if (binding.type === 'if') continue;
-      
+
       nestedBindings.push({
         id: elementId,
         signalName: binding.signalName,
@@ -244,16 +244,10 @@ const processHtmlTemplateWithConditionals = (
         conditionalId,
       });
     }
-    
+
     // Generate the processed HTML for this conditional element
-    const processedCondHtml = processConditionalElementHtml(
-      condEl, 
-      templateContent, 
-      signalInitializers, 
-      elementIdMap,
-      conditionalId
-    );
-    
+    const processedCondHtml = processConditionalElementHtml(condEl, templateContent, signalInitializers, elementIdMap, conditionalId);
+
     conditionals.push({
       id: conditionalId,
       signalName,
@@ -263,10 +257,10 @@ const processHtmlTemplateWithConditionals = (
       endIndex: condEl.closeTagEnd,
       nestedBindings,
     });
-    
+
     bindings.push(...nestedBindings);
   }
-  
+
   // Second pass: Process non-conditional bindings
   for (const binding of parsed.bindings) {
     // Skip if this element is inside a conditional
@@ -275,13 +269,13 @@ const processHtmlTemplateWithConditionals = (
     if (conditionalElementSet.has(binding.element)) continue;
     // Skip 'if' bindings (they're handled as conditionals)
     if (binding.type === 'if') continue;
-    
+
     // Get or assign ID for the element
     if (!elementIdMap.has(binding.element)) {
       elementIdMap.set(binding.element, `b${idCounter++}`);
     }
     const elementId = elementIdMap.get(binding.element)!;
-    
+
     bindings.push({
       id: elementId,
       signalName: binding.signalName,
@@ -291,19 +285,13 @@ const processHtmlTemplateWithConditionals = (
       conditionalId: undefined,
     });
   }
-  
+
   // Generate the processed HTML output
-  const processedContent = generateProcessedHtml(
-    templateContent,
-    parsed,
-    signalInitializers,
-    elementIdMap,
-    conditionals
-  );
-  
-  return { 
-    processedContent, 
-    bindings, 
+  const processedContent = generateProcessedHtml(templateContent, parsed, signalInitializers, elementIdMap, conditionals);
+
+  return {
+    processedContent,
+    bindings,
     conditionals,
     nextId: idCounter,
     hasConditionals: conditionals.length > 0,
@@ -318,38 +306,35 @@ const processConditionalElementHtml = (
   originalHtml: string,
   signalInitializers: Map<string, string | number | boolean>,
   elementIdMap: Map<HtmlElement, string>,
-  conditionalId: string
+  conditionalId: string,
 ): string => {
   let html = getElementHtml(element, originalHtml);
-  
+
   // Remove the if attribute
   const ifAttr = element.attributes.get('if')!;
   const ifAttrStr = `if="${ifAttr.value}"`;
   html = html.replace(ifAttrStr, '');
-  
+
   // Add ID to the opening tag (right after the tag name)
   const tagNameEnd = element.tagName.length + 1; // +1 for '<'
   html = html.substring(0, tagNameEnd) + ` id="${conditionalId}"` + html.substring(tagNameEnd);
-  
+
   // Replace signal expressions with initial values
   html = replaceExpressionsWithValues(html, signalInitializers);
-  
+
   // Add IDs to nested elements that have bindings
   html = addIdsToNestedElements(html, element, elementIdMap, originalHtml);
-  
+
   // Clean up whitespace
   html = html.replace(/\s+/g, ' ').replace(/\s+>/g, '>').replace(/\s>/g, '>');
-  
+
   return html;
 };
 
 /**
  * Replace ${this.signal()} expressions with their initial values
  */
-const replaceExpressionsWithValues = (
-  html: string,
-  signalInitializers: Map<string, string | number | boolean>
-): string => {
+const replaceExpressionsWithValues = (html: string, signalInitializers: Map<string, string | number | boolean>): string => {
   return html.replace(/\$\{this\.(\w+)\(\)\}/g, (match, signalName) => {
     const value = signalInitializers.get(signalName);
     return value !== undefined ? String(value) : '';
@@ -359,21 +344,16 @@ const replaceExpressionsWithValues = (
 /**
  * Add IDs to nested elements that need them (those with bindings)
  */
-const addIdsToNestedElements = (
-  processedHtml: string,
-  rootElement: HtmlElement,
-  elementIdMap: Map<HtmlElement, string>,
-  _originalHtml: string
-): string => {
+const addIdsToNestedElements = (processedHtml: string, rootElement: HtmlElement, elementIdMap: Map<HtmlElement, string>, _originalHtml: string): string => {
   let result = processedHtml;
-  
+
   // Walk the original element tree and add IDs where needed
   walkElements([rootElement], (el) => {
     if (el === rootElement) return; // Root already has ID
-    
+
     const id = elementIdMap.get(el);
     if (!id) return; // No ID needed for this element
-    
+
     // Find this element in the processed HTML by reconstructing a unique pattern
     // Use the tag name and any existing attributes to find it
     const existingAttrs: string[] = [];
@@ -384,11 +364,11 @@ const addIdsToNestedElements = (
         existingAttrs.push(`${name}="${processedValue}"`);
       }
     }
-    
+
     // Build a pattern to match this element's opening tag
     // This is a best-effort approach - complex cases might not match perfectly
     const tagPattern = new RegExp(`<${el.tagName}(\\s+[^>]*)?(?<!id="[^"]*")>`, 'g');
-    
+
     // Try to add id if not present
     result = result.replace(tagPattern, (match) => {
       if (match.includes(`id="`)) return match; // Already has an ID
@@ -396,7 +376,7 @@ const addIdsToNestedElements = (
       return match.replace(`<${el.tagName}`, `<${el.tagName} id="${id}"`);
     });
   });
-  
+
   return result;
 };
 
@@ -408,55 +388,51 @@ const generateProcessedHtml = (
   parsed: ParsedTemplate,
   signalInitializers: Map<string, string | number | boolean>,
   elementIdMap: Map<HtmlElement, string>,
-  conditionals: ConditionalBlock[]
+  conditionals: ConditionalBlock[],
 ): string => {
   // Build list of edits to apply
   const edits: Array<{ start: number; end: number; replacement: string }> = [];
-  
+
   // Replace conditional elements with their processed versions or templates
   for (const cond of conditionals) {
-    const replacement = cond.initialValue 
-      ? cond.templateContent 
-      : `<template id="${cond.id}"></template>`;
+    const replacement = cond.initialValue ? cond.templateContent : `<template id="${cond.id}"></template>`;
     edits.push({
       start: cond.startIndex,
       end: cond.endIndex,
       replacement,
     });
   }
-  
+
   // Replace expressions in non-conditional parts
-  const conditionalRanges = conditionals.map(c => ({ start: c.startIndex, end: c.endIndex }));
-  
+  const conditionalRanges = conditionals.map((c) => ({ start: c.startIndex, end: c.endIndex }));
+
   const exprRegex = /\$\{this\.(\w+)\(\)\}/g;
   let match: RegExpExecArray | null;
-  
+
   while ((match = exprRegex.exec(originalHtml)) !== null) {
     const exprStart = match.index;
     const exprEnd = exprStart + match[0].length;
-    
+
     // Skip if inside a conditional range
-    const insideConditional = conditionalRanges.some(r => exprStart >= r.start && exprStart < r.end);
+    const insideConditional = conditionalRanges.some((r) => exprStart >= r.start && exprStart < r.end);
     if (insideConditional) continue;
-    
+
     const signalName = match[1];
     const value = signalInitializers.get(signalName);
     const replacement = value !== undefined ? String(value) : '';
-    
+
     edits.push({ start: exprStart, end: exprEnd, replacement });
   }
-  
+
   // Add IDs to elements that need them (not inside conditionals)
   for (const [element, id] of elementIdMap) {
     // Skip elements that are inside conditionals
-    const insideConditional = conditionalRanges.some(
-      r => element.tagStart >= r.start && element.tagStart < r.end
-    );
+    const insideConditional = conditionalRanges.some((r) => element.tagStart >= r.start && element.tagStart < r.end);
     if (insideConditional) continue;
-    
+
     // Check if element already has an id attribute
     if (element.attributes.has('id')) continue;
-    
+
     // Add ID after tag name
     edits.push({
       start: element.tagNameEnd,
@@ -464,18 +440,18 @@ const generateProcessedHtml = (
       replacement: ` id="${id}"`,
     });
   }
-  
+
   // Apply edits in reverse order
   edits.sort((a, b) => b.start - a.start);
-  
+
   let result = originalHtml;
   for (const edit of edits) {
     result = result.substring(0, edit.start) + edit.replacement + result.substring(edit.end);
   }
-  
+
   // Clean up whitespace
   result = result.replace(/\s+/g, ' ').trim();
-  
+
   return result;
 };
 
@@ -489,7 +465,7 @@ const generateProcessedHtml = (
  */
 const generateSingleBindingCode = (binding: BindingInfo, useCache: boolean): string => {
   const elRef = useCache ? binding.id : `r.getElementById('${binding.id}')`;
-  
+
   if (binding.type === 'style') {
     const prop = toCamelCase(binding.property!);
     return `this.${binding.signalName}.subscribe(v => { ${elRef}.style.${prop} = v; })`;
@@ -504,49 +480,46 @@ const generateSingleBindingCode = (binding: BindingInfo, useCache: boolean): str
 /**
  * Generate the complete initializeBindings function with cached refs and conditionals
  */
-const generateInitBindingsFunction = (
-  bindings: BindingInfo[], 
-  conditionals: ConditionalBlock[],
-): string => {
+const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: ConditionalBlock[]): string => {
   const lines: string[] = [];
   lines.push('  initializeBindings = () => {');
   lines.push('    const r = this.shadowRoot;');
-  
+
   // Group top-level bindings (not inside any conditional)
-  const topLevelBindings = bindings.filter(b => !b.isInsideConditional);
-  
+  const topLevelBindings = bindings.filter((b) => !b.isInsideConditional);
+
   // Get unique element IDs for caching
-  const topLevelIds = [...new Set(topLevelBindings.map(b => b.id))];
-  
+  const topLevelIds = [...new Set(topLevelBindings.map((b) => b.id))];
+
   // Cache refs for top-level elements
   if (topLevelIds.length > 0) {
     for (const id of topLevelIds) {
       lines.push(`    const ${id} = r.getElementById('${id}');`);
     }
   }
-  
+
   // Generate subscriptions for top-level bindings
   for (const binding of topLevelBindings) {
     lines.push(`    ${generateSingleBindingCode(binding, true)};`);
   }
-  
+
   // Generate conditional bindings
   for (const cond of conditionals) {
     const nestedBindings = cond.nestedBindings;
     const escapedTemplate = cond.templateContent.replace(/`/g, '\\`').replace(/\$/g, '\\$');
-    
+
     // Generate nested bindings initializer
     let nestedCode = '() => []';
     if (nestedBindings.length > 0) {
-      const nestedIds = [...new Set(nestedBindings.map(b => b.id))];
+      const nestedIds = [...new Set(nestedBindings.map((b) => b.id))];
       const nestedLines: string[] = [];
       nestedLines.push('() => {');
-      
+
       // Cache refs for nested elements
       for (const id of nestedIds) {
         nestedLines.push(`      const ${id} = r.getElementById('${id}');`);
       }
-      
+
       nestedLines.push('      return [');
       for (const binding of nestedBindings) {
         nestedLines.push(`        ${generateSingleBindingCode(binding, true)},`);
@@ -555,12 +528,12 @@ const generateInitBindingsFunction = (
       nestedLines.push('    }');
       nestedCode = nestedLines.join('\n');
     }
-    
+
     lines.push(`    ${BIND_FN.IF}(r, this.${cond.signalName}, '${cond.id}', \`${escapedTemplate}\`, ${nestedCode});`);
   }
-  
+
   lines.push('  };');
-  
+
   return '\n\n' + lines.join('\n');
 };
 

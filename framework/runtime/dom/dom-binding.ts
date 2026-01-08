@@ -20,21 +20,21 @@ export const __bindAttr = (root: ShadowRoot, signal: Signal<any>, id: string, at
   });
 };
 
-/** 
+/**
  * Bind signal to element's first text node.
  * Updates only the text node, not the element, for minimal DOM mutation.
  */
 export const __bindText = (root: ShadowRoot, signal: Signal<any>, id: string): void => {
   const el = root.getElementById(id);
   if (!el) return;
-  
+
   // Find the first text node, or create one if element is empty
-  let textNode = Array.from(el.childNodes).find(n => n.nodeType === Node.TEXT_NODE) as Text | undefined;
+  let textNode = Array.from(el.childNodes).find((n) => n.nodeType === Node.TEXT_NODE) as Text | undefined;
   if (!textNode) {
     textNode = document.createTextNode('');
     el.appendChild(textNode);
   }
-  
+
   // Subscribe to signal and update only the text node
   signal.subscribe((v) => {
     textNode.data = String(v);
@@ -44,7 +44,7 @@ export const __bindText = (root: ShadowRoot, signal: Signal<any>, id: string): v
 /**
  * Bind conditional rendering using <template> as placeholder.
  * When signal is truthy, content is shown. When falsy, replaced with <template>.
- * 
+ *
  * @param root - Shadow root to search in
  * @param signal - Signal controlling visibility
  * @param id - Element/placeholder ID
@@ -52,13 +52,7 @@ export const __bindText = (root: ShadowRoot, signal: Signal<any>, id: string): v
  * @param initNested - Function that initializes nested bindings, returns unsubscribe functions
  * @returns Cleanup function to remove this binding
  */
-export const __bindIf = (
-  root: ShadowRoot,
-  signal: Signal<any>,
-  id: string,
-  template: string,
-  initNested: () => (() => void)[]
-): (() => void) => {
+export const __bindIf = (root: ShadowRoot, signal: Signal<any>, id: string, template: string, initNested: () => (() => void)[]): (() => void) => {
   let cleanups: (() => void)[] = [];
   let isShown = root.getElementById(id)?.tagName !== 'TEMPLATE';
 
