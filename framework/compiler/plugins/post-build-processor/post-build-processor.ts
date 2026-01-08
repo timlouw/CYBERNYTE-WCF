@@ -239,7 +239,7 @@ const promptForPort = (): Promise<number> => {
   });
 
   return new Promise((resolve) => {
-    rl.question(`${ansi.yellow}Enter a different port number: ${ansi.reset}`, (answer) => {
+    rl.question(`${ansi.yellow}Enter a different port number: ${ansi.reset}`, (answer: string) => {
       rl.close();
       const port = parseInt(answer, 10);
       if (isNaN(port) || port < 1 || port > 65535) {
@@ -287,7 +287,7 @@ const compressAndServe = (filePath: string, req: http.IncomingMessage, res: http
 };
 
 const startServer = (port: number = serverPort): void => {
-  const server = http.createServer((req, res) => {
+  const server = http.createServer((req: http.IncomingMessage, res: http.ServerResponse) => {
     const requestedUrl = req.url || '/';
     const requestedPath = path.join(distDir, requestedUrl);
     const indexPath = path.join(distDir, 'index.html');
@@ -321,7 +321,7 @@ const startServer = (port: number = serverPort): void => {
     }
   });
 
-  server.on('error', async (err: NodeJS.ErrnoException) => {
+  server.on('error', async (err: Error & { code?: string }) => {
     if (err.code === 'EADDRINUSE') {
       console.error(consoleColors.red, `Port ${port} is already in use.`);
       const newPort = await promptForPort();
@@ -375,7 +375,7 @@ const recursivelyCopyAssetsIntoDist = async (src: string, dest: string): Promise
 const watchAndRecursivelyCopyAssetsIntoDist = (src: string, dest: string): void => {
   recursivelyCopyAssetsIntoDist(src, dest);
 
-  fs.watch(src, { recursive: true }, (eventType, filename) => {
+  fs.watch(src, { recursive: true }, (eventType: string, filename: string | null) => {
     if (filename) {
       const srcPath = path.join(src, filename);
       const destPath = path.join(dest, filename);

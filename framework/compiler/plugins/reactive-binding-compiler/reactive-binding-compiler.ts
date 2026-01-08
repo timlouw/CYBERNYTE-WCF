@@ -3,16 +3,25 @@
  *
  * Transforms signal expressions in templates into efficient DOM bindings.
  * Generates static templates and binding initialization code.
+ * Supports conditional rendering with if="${this.signal()}" directives.
+ *
+ * Uses a state machine HTML parser for robust handling of nested elements,
+ * expressions in attributes, and complex template structures.
  *
  * @example
  * // Before: html`<span>${this.count()}</span>`
- * // After:  static template with `<span id="r0">0</span>`
- * //         + initializeBindings() { __bindText(this.shadowRoot, this.count, 'r0'); }
+ * // After:  static template with `<span id="b0">0</span>`
+ * //         + initializeBindings() { const b0 = r.getElementById('b0'); this.count.subscribe(v => { b0.textContent = v; }); }
+ *
+ * @example Conditional rendering
+ * // Before: html`<div if="${this.isVisible()}">${this.count()}</div>`
+ * // After:  static template with `<div id="b0">0</div>` (if initial true) or `<template id="b0"></template>` (if initial false)
+ * //         + __bindIf(r, this.isVisible, 'b0', '<div id="b0">0</div>', () => { ... nested bindings ... });
  */
 import fs from 'fs';
 import { Plugin } from 'esbuild';
 import ts from 'typescript';
-import type { ReactiveBinding, SignalExpression, TemplateEdit, ImportInfo, TemplateInfo } from '../../types.js';
+import type { SignalExpression, ImportInfo, TemplateInfo } from '../../types.js';
 import {
   findComponentClass,
   findSignalInitializers,
@@ -30,26 +39,54 @@ import {
   PLUGIN_NAME,
   BIND_FN,
 } from '../../utils/index.js';
+import {
+  parseHtmlTemplate,
+  walkElements,
+  findElementsWithAttribute,
+  getElementHtml,
+  getBindingsForElement,
+  type HtmlElement,
+  type ParsedTemplate,
+} from '../../utils/html-parser.js';
 
 const NAME = PLUGIN_NAME.REACTIVE;
+
+// ============================================================================
+// Types for Conditional Binding
+// ============================================================================
+
+interface ConditionalBlock {
+  id: string;
+  signalName: string;
+  initialValue: boolean;
+  templateContent: string; // HTML to insert when true
+  startIndex: number; // Position in HTML where the element/block starts
+  endIndex: number; // Position where it ends
+  nestedBindings: BindingInfo[]; // Bindings inside this conditional
+}
+
+interface BindingInfo {
+  id: string;
+  signalName: string;
+  type: 'text' | 'style' | 'attr';
+  property?: string; // For style/attr bindings
+  isInsideConditional: boolean;
+  conditionalId?: string; // Which conditional block this is inside
+}
+
+// ============================================================================
+// Import Detection
+// ============================================================================
 
 /**
  * Find import declarations that import from shadow-dom (Component, registerComponent).
  * These imports will be updated to include bind functions from dom/index.
- *
- * @example
- * // INPUT:
- * import { Component, registerComponent } from '../framework/runtime/dom/shadow-dom.js';
- *
- * // Will be updated to:
- * import { Component, registerComponent, __bindText, __bindStyle } from '../framework/runtime/dom/index.js';
  */
 const findServicesImport = (sourceFile: ts.SourceFile): ImportInfo | null => {
   for (const statement of sourceFile.statements) {
     if (ts.isImportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
       const specifier = statement.moduleSpecifier.text;
 
-      // Match paths ending with shadow-dom.js or dom/index.js (framework DOM imports)
       if (specifier.includes('shadow-dom') || specifier.includes('dom/index')) {
         const namedImports: string[] = [];
 
@@ -59,11 +96,8 @@ const findServicesImport = (sourceFile: ts.SourceFile): ImportInfo | null => {
           }
         }
 
-        // Detect quote character from source
         const fullText = statement.moduleSpecifier.getFullText(sourceFile);
         const quoteChar = fullText.includes("'") ? "'" : '"';
-
-        // If importing from shadow-dom.js, redirect to dom/index.js which exports all bind functions
         const normalizedSpecifier = specifier.includes('shadow-dom') ? specifier.replace('shadow-dom.js', 'index.js').replace('shadow-dom', 'index') : specifier;
 
         return {
@@ -81,17 +115,6 @@ const findServicesImport = (sourceFile: ts.SourceFile): ImportInfo | null => {
 
 /**
  * Find all html tagged template literals and extract signal expressions.
- *
- * @example
- * // INPUT:
- * html`<div>${this.count()}</div>`
- *
- * // Returns:
- * // [{
- * //   expressions: [{ signalName: 'count', fullExpression: 'this.count()', ... }],
- * //   templateStart: 0,
- * //   templateEnd: 28
- * // }]
  */
 const findHtmlTemplates = (sourceFile: ts.SourceFile): TemplateInfo[] => {
   const templates: TemplateInfo[] = [];
@@ -133,143 +156,327 @@ const findHtmlTemplates = (sourceFile: ts.SourceFile): TemplateInfo[] => {
 };
 
 // ============================================================================
-// HTML Template Processing
+// HTML Template Processing (using State Machine Parser)
 // ============================================================================
 
 /**
- * Determines the binding type based on the context before the expression in HTML
+ * Process HTML template content using the state machine parser.
+ * This is more robust than regex-based parsing and handles:
+ * - Deeply nested elements
+ * - Expressions in attributes
+ * - Nested same-name tags
+ * - Complex template structures
  */
-const determineBindingType = (beforeExpr: string): { propertyType: 'style' | 'attribute' | 'innerText'; property?: string } => {
-  // Check if it's a style property: style="property: ${...}"
-  const styleMatch = beforeExpr.match(/style\s*=\s*["'][^"']*?([\w-]+)\s*:\s*$/);
-  if (styleMatch) {
-    return { propertyType: 'style', property: styleMatch[1] };
-  }
-
-  // Check if it's an attribute: attribute="${...}"
-  const attrMatch = beforeExpr.match(/([\w-]+)\s*=\s*["']$/);
-  if (attrMatch) {
-    return { propertyType: 'attribute', property: attrMatch[1] };
-  }
-
-  // Default to innerText (content between tags)
-  return { propertyType: 'innerText' };
-};
-
-/**
- * Find the enclosing element for an expression and determine where to inject ID
- */
-const findEnclosingElement = (htmlContent: string, exprPosition: number): { tagStart: number; tagNameEnd: number; tagName: string } | null => {
-  // Find all opening tags before the expression position
-  const tagRegex = /<(\w[\w-]*)\s*/g;
-  let lastUnclosedTag: { tagStart: number; tagNameEnd: number; tagName: string } | null = null;
-  let match: RegExpExecArray | null;
-
-  while ((match = tagRegex.exec(htmlContent)) !== null) {
-    if (match.index >= exprPosition) break;
-
-    const tagName = match[1];
-    const tagStart = match.index;
-    const tagNameEnd = match.index + 1 + tagName.length; // After "<tagName"
-
-    // Check if this tag is closed before our expression
-    const afterTag = htmlContent.substring(tagNameEnd, exprPosition);
-    const closingTagPattern = new RegExp(`</${tagName}\\s*>`, 'i');
-
-    if (!closingTagPattern.test(afterTag)) {
-      lastUnclosedTag = { tagStart, tagNameEnd, tagName };
-    }
-  }
-
-  return lastUnclosedTag;
-};
-
-/**
- * Process HTML template content and generate bindings
- */
-const processHtmlTemplate = (
+const processHtmlTemplateWithConditionals = (
   templateContent: string,
   signalInitializers: Map<string, string | number | boolean>,
   startingId: number,
-): { processedContent: string; bindings: ReactiveBinding[]; nextId: number } => {
-  const bindings: ReactiveBinding[] = [];
+): { 
+  processedContent: string; 
+  bindings: BindingInfo[];
+  conditionals: ConditionalBlock[];
+  nextId: number;
+  hasConditionals: boolean;
+} => {
+  // Parse the HTML using the state machine parser
+  const parsed = parseHtmlTemplate(templateContent);
+  
+  const bindings: BindingInfo[] = [];
+  const conditionals: ConditionalBlock[] = [];
   let idCounter = startingId;
-
-  // Find all ${this.signalName()} expressions
-  const exprRegex = /\$\{(this\.(\w+)\(\))\}/g;
-  const edits: TemplateEdit[] = [];
-  const idInsertions: Map<number, string> = new Map();
-  let match: RegExpExecArray | null;
-
-  while ((match = exprRegex.exec(templateContent)) !== null) {
-    const fullExpr = match[0];
-    const signalName = match[2];
-    const exprStart = match.index;
-    const exprEnd = exprStart + fullExpr.length;
-
-    const initialValue = signalInitializers.get(signalName);
-    const beforeExpr = templateContent.substring(0, exprStart);
-
-    // Find enclosing element
-    const enclosingElement = findEnclosingElement(templateContent, exprStart);
-
-    if (enclosingElement) {
-      const elementId = `r${idCounter}`;
-      const { propertyType, property } = determineBindingType(beforeExpr);
-
-      // Check if we already have an ID insertion for this position
-      if (!idInsertions.has(enclosingElement.tagNameEnd)) {
-        idInsertions.set(enclosingElement.tagNameEnd, elementId);
+  
+  // Track which elements need IDs and what ID they get
+  const elementIdMap = new Map<HtmlElement, string>();
+  
+  // Find all conditional elements (those with if attribute)
+  const conditionalElements = findElementsWithAttribute(parsed.roots, 'if');
+  const conditionalElementSet = new Set(conditionalElements);
+  
+  // Create a set of all elements that are inside conditionals (for filtering)
+  const elementsInsideConditionals = new Set<HtmlElement>();
+  for (const condEl of conditionalElements) {
+    walkElements([condEl], (el) => {
+      if (el !== condEl) {
+        elementsInsideConditionals.add(el);
       }
-
-      bindings.push({
-        signalName,
-        elementSelector: idInsertions.get(enclosingElement.tagNameEnd)!,
-        propertyType,
-        property,
+    });
+  }
+  
+  // First pass: Process conditionals and assign IDs
+  for (const condEl of conditionalElements) {
+    const ifAttr = condEl.attributes.get('if')!;
+    const ifMatch = ifAttr.value.match(/^\$\{this\.(\w+)\(\)\}$/);
+    if (!ifMatch) continue;
+    
+    const signalName = ifMatch[1];
+    const conditionalId = `b${idCounter++}`;
+    elementIdMap.set(condEl, conditionalId);
+    
+    const initialValue = Boolean(signalInitializers.get(signalName));
+    
+    // Get bindings for this conditional element and its children
+    const condBindings = getBindingsForElement(condEl, parsed.bindings);
+    const nestedBindings: BindingInfo[] = [];
+    
+    for (const binding of condBindings) {
+      // Get or assign ID for the element
+      let elementId: string;
+      if (binding.element === condEl) {
+        // Binding on the conditional element itself uses the conditional ID
+        elementId = conditionalId;
+      } else {
+        // Nested element - check if we already assigned an ID
+        if (!elementIdMap.has(binding.element)) {
+          elementIdMap.set(binding.element, `b${idCounter++}`);
+        }
+        elementId = elementIdMap.get(binding.element)!;
+      }
+      
+      // Skip the 'if' binding itself
+      if (binding.type === 'if') continue;
+      
+      nestedBindings.push({
+        id: elementId,
+        signalName: binding.signalName,
+        type: binding.type as 'text' | 'style' | 'attr',
+        property: binding.property,
+        isInsideConditional: true,
+        conditionalId,
       });
-
-      idCounter++;
     }
-
-    // Add edit to remove or replace the expression
-    if (initialValue !== undefined) {
-      edits.push({ type: 'replace', start: exprStart, end: exprEnd, content: String(initialValue) });
-    } else {
-      edits.push({ type: 'remove', start: exprStart, end: exprEnd });
+    
+    // Generate the processed HTML for this conditional element
+    const processedCondHtml = processConditionalElementHtml(
+      condEl, 
+      templateContent, 
+      signalInitializers, 
+      elementIdMap,
+      conditionalId
+    );
+    
+    conditionals.push({
+      id: conditionalId,
+      signalName,
+      initialValue,
+      templateContent: processedCondHtml,
+      startIndex: condEl.tagStart,
+      endIndex: condEl.closeTagEnd,
+      nestedBindings,
+    });
+    
+    bindings.push(...nestedBindings);
+  }
+  
+  // Second pass: Process non-conditional bindings
+  for (const binding of parsed.bindings) {
+    // Skip if this element is inside a conditional
+    if (elementsInsideConditionals.has(binding.element)) continue;
+    // Skip if this is a conditional element (already processed)
+    if (conditionalElementSet.has(binding.element)) continue;
+    // Skip 'if' bindings (they're handled as conditionals)
+    if (binding.type === 'if') continue;
+    
+    // Get or assign ID for the element
+    if (!elementIdMap.has(binding.element)) {
+      elementIdMap.set(binding.element, `b${idCounter++}`);
     }
+    const elementId = elementIdMap.get(binding.element)!;
+    
+    bindings.push({
+      id: elementId,
+      signalName: binding.signalName,
+      type: binding.type as 'text' | 'style' | 'attr',
+      property: binding.property,
+      isInsideConditional: false,
+      conditionalId: undefined,
+    });
   }
+  
+  // Generate the processed HTML output
+  const processedContent = generateProcessedHtml(
+    templateContent,
+    parsed,
+    signalInitializers,
+    elementIdMap,
+    conditionals
+  );
+  
+  return { 
+    processedContent, 
+    bindings, 
+    conditionals,
+    nextId: idCounter,
+    hasConditionals: conditionals.length > 0,
+  };
+};
 
-  // Add ID insertion edits
-  for (const [position, elementId] of idInsertions) {
-    edits.push({ type: 'insertId', start: position, end: position, elementId });
-  }
+/**
+ * Process a conditional element's HTML for the template string
+ */
+const processConditionalElementHtml = (
+  element: HtmlElement,
+  originalHtml: string,
+  signalInitializers: Map<string, string | number | boolean>,
+  elementIdMap: Map<HtmlElement, string>,
+  conditionalId: string
+): string => {
+  let html = getElementHtml(element, originalHtml);
+  
+  // Remove the if attribute
+  const ifAttr = element.attributes.get('if')!;
+  const ifAttrStr = `if="${ifAttr.value}"`;
+  html = html.replace(ifAttrStr, '');
+  
+  // Add ID to the opening tag (right after the tag name)
+  const tagNameEnd = element.tagName.length + 1; // +1 for '<'
+  html = html.substring(0, tagNameEnd) + ` id="${conditionalId}"` + html.substring(tagNameEnd);
+  
+  // Replace signal expressions with initial values
+  html = replaceExpressionsWithValues(html, signalInitializers);
+  
+  // Add IDs to nested elements that have bindings
+  html = addIdsToNestedElements(html, element, elementIdMap, originalHtml);
+  
+  // Clean up whitespace
+  html = html.replace(/\s+/g, ' ').replace(/\s+>/g, '>').replace(/\s>/g, '>');
+  
+  return html;
+};
 
-  // Apply edits in reverse order to maintain positions
-  edits.sort((a, b) => b.start - a.start);
+/**
+ * Replace ${this.signal()} expressions with their initial values
+ */
+const replaceExpressionsWithValues = (
+  html: string,
+  signalInitializers: Map<string, string | number | boolean>
+): string => {
+  return html.replace(/\$\{this\.(\w+)\(\)\}/g, (match, signalName) => {
+    const value = signalInitializers.get(signalName);
+    return value !== undefined ? String(value) : '';
+  });
+};
 
-  let result = templateContent;
-  const processedPositions = new Set<number>();
-
-  for (const edit of edits) {
-    if (edit.type === 'remove') {
-      result = result.substring(0, edit.start) + result.substring(edit.end);
-    } else if (edit.type === 'replace') {
-      result = result.substring(0, edit.start) + edit.content! + result.substring(edit.end);
-    } else if (edit.type === 'insertId' && !processedPositions.has(edit.start)) {
-      // Check if there's already an id attribute
-      const afterPosition = result.substring(edit.start);
-      const nextCloseBracket = afterPosition.indexOf('>');
-      const tagContent = afterPosition.substring(0, nextCloseBracket);
-
-      if (!tagContent.includes(' id="r')) {
-        result = result.substring(0, edit.start) + ` id="${edit.elementId}"` + result.substring(edit.start);
-        processedPositions.add(edit.start);
+/**
+ * Add IDs to nested elements that need them (those with bindings)
+ */
+const addIdsToNestedElements = (
+  processedHtml: string,
+  rootElement: HtmlElement,
+  elementIdMap: Map<HtmlElement, string>,
+  _originalHtml: string
+): string => {
+  let result = processedHtml;
+  
+  // Walk the original element tree and add IDs where needed
+  walkElements([rootElement], (el) => {
+    if (el === rootElement) return; // Root already has ID
+    
+    const id = elementIdMap.get(el);
+    if (!id) return; // No ID needed for this element
+    
+    // Find this element in the processed HTML by reconstructing a unique pattern
+    // Use the tag name and any existing attributes to find it
+    const existingAttrs: string[] = [];
+    for (const [name, attr] of el.attributes) {
+      if (name !== 'if') {
+        // Use the processed attribute value (with expressions replaced)
+        const processedValue = replaceExpressionsWithValues(attr.value, new Map());
+        existingAttrs.push(`${name}="${processedValue}"`);
       }
     }
-  }
+    
+    // Build a pattern to match this element's opening tag
+    // This is a best-effort approach - complex cases might not match perfectly
+    const tagPattern = new RegExp(`<${el.tagName}(\\s+[^>]*)?(?<!id="[^"]*")>`, 'g');
+    
+    // Try to add id if not present
+    result = result.replace(tagPattern, (match) => {
+      if (match.includes(`id="`)) return match; // Already has an ID
+      // Add ID after tag name
+      return match.replace(`<${el.tagName}`, `<${el.tagName} id="${id}"`);
+    });
+  });
+  
+  return result;
+};
 
-  return { processedContent: result, bindings, nextId: idCounter };
+/**
+ * Generate the final processed HTML output
+ */
+const generateProcessedHtml = (
+  originalHtml: string,
+  parsed: ParsedTemplate,
+  signalInitializers: Map<string, string | number | boolean>,
+  elementIdMap: Map<HtmlElement, string>,
+  conditionals: ConditionalBlock[]
+): string => {
+  // Build list of edits to apply
+  const edits: Array<{ start: number; end: number; replacement: string }> = [];
+  
+  // Replace conditional elements with their processed versions or templates
+  for (const cond of conditionals) {
+    const replacement = cond.initialValue 
+      ? cond.templateContent 
+      : `<template id="${cond.id}"></template>`;
+    edits.push({
+      start: cond.startIndex,
+      end: cond.endIndex,
+      replacement,
+    });
+  }
+  
+  // Replace expressions in non-conditional parts
+  const conditionalRanges = conditionals.map(c => ({ start: c.startIndex, end: c.endIndex }));
+  
+  const exprRegex = /\$\{this\.(\w+)\(\)\}/g;
+  let match: RegExpExecArray | null;
+  
+  while ((match = exprRegex.exec(originalHtml)) !== null) {
+    const exprStart = match.index;
+    const exprEnd = exprStart + match[0].length;
+    
+    // Skip if inside a conditional range
+    const insideConditional = conditionalRanges.some(r => exprStart >= r.start && exprStart < r.end);
+    if (insideConditional) continue;
+    
+    const signalName = match[1];
+    const value = signalInitializers.get(signalName);
+    const replacement = value !== undefined ? String(value) : '';
+    
+    edits.push({ start: exprStart, end: exprEnd, replacement });
+  }
+  
+  // Add IDs to elements that need them (not inside conditionals)
+  for (const [element, id] of elementIdMap) {
+    // Skip elements that are inside conditionals
+    const insideConditional = conditionalRanges.some(
+      r => element.tagStart >= r.start && element.tagStart < r.end
+    );
+    if (insideConditional) continue;
+    
+    // Check if element already has an id attribute
+    if (element.attributes.has('id')) continue;
+    
+    // Add ID after tag name
+    edits.push({
+      start: element.tagNameEnd,
+      end: element.tagNameEnd,
+      replacement: ` id="${id}"`,
+    });
+  }
+  
+  // Apply edits in reverse order
+  edits.sort((a, b) => b.start - a.start);
+  
+  let result = originalHtml;
+  for (const edit of edits) {
+    result = result.substring(0, edit.start) + edit.replacement + result.substring(edit.end);
+  }
+  
+  // Clean up whitespace
+  result = result.replace(/\s+/g, ' ').trim();
+  
+  return result;
 };
 
 // ============================================================================
@@ -277,23 +484,84 @@ const processHtmlTemplate = (
 // ============================================================================
 
 /**
- * Generates the compiled bindings code that will be injected
+ * Generate binding code for a single binding (used for both top-level and nested)
+ * For text bindings, uses .firstChild.data to update only the text node (minimal DOM mutation)
  */
-const generateBindingsCode = (bindings: ReactiveBinding[]): string => {
-  if (bindings.length === 0) return '';
+const generateSingleBindingCode = (binding: BindingInfo, useCache: boolean): string => {
+  const elRef = useCache ? binding.id : `r.getElementById('${binding.id}')`;
+  
+  if (binding.type === 'style') {
+    const prop = toCamelCase(binding.property!);
+    return `this.${binding.signalName}.subscribe(v => { ${elRef}.style.${prop} = v; })`;
+  } else if (binding.type === 'attr') {
+    return `this.${binding.signalName}.subscribe(v => { ${elRef}.setAttribute('${binding.property}', v); })`;
+  } else {
+    // Text binding: update text node directly for minimal DOM mutation
+    return `this.${binding.signalName}.subscribe(v => { ${elRef}.firstChild.data = v; })`;
+  }
+};
 
-  return bindings
-    .map((binding) => {
-      if (binding.propertyType === 'style') {
-        const prop = toCamelCase(binding.property!);
-        return `    ${BIND_FN.STYLE}(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}','${prop}');`;
-      } else if (binding.propertyType === 'attribute') {
-        return `    ${BIND_FN.ATTR}(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}','${binding.property}');`;
-      } else {
-        return `    ${BIND_FN.TEXT}(this.shadowRoot,this.${binding.signalName},'${binding.elementSelector}');`;
+/**
+ * Generate the complete initializeBindings function with cached refs and conditionals
+ */
+const generateInitBindingsFunction = (
+  bindings: BindingInfo[], 
+  conditionals: ConditionalBlock[],
+): string => {
+  const lines: string[] = [];
+  lines.push('  initializeBindings = () => {');
+  lines.push('    const r = this.shadowRoot;');
+  
+  // Group top-level bindings (not inside any conditional)
+  const topLevelBindings = bindings.filter(b => !b.isInsideConditional);
+  
+  // Get unique element IDs for caching
+  const topLevelIds = [...new Set(topLevelBindings.map(b => b.id))];
+  
+  // Cache refs for top-level elements
+  if (topLevelIds.length > 0) {
+    for (const id of topLevelIds) {
+      lines.push(`    const ${id} = r.getElementById('${id}');`);
+    }
+  }
+  
+  // Generate subscriptions for top-level bindings
+  for (const binding of topLevelBindings) {
+    lines.push(`    ${generateSingleBindingCode(binding, true)};`);
+  }
+  
+  // Generate conditional bindings
+  for (const cond of conditionals) {
+    const nestedBindings = cond.nestedBindings;
+    const escapedTemplate = cond.templateContent.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+    
+    // Generate nested bindings initializer
+    let nestedCode = '() => []';
+    if (nestedBindings.length > 0) {
+      const nestedIds = [...new Set(nestedBindings.map(b => b.id))];
+      const nestedLines: string[] = [];
+      nestedLines.push('() => {');
+      
+      // Cache refs for nested elements
+      for (const id of nestedIds) {
+        nestedLines.push(`      const ${id} = r.getElementById('${id}');`);
       }
-    })
-    .join('\n');
+      
+      nestedLines.push('      return [');
+      for (const binding of nestedBindings) {
+        nestedLines.push(`        ${generateSingleBindingCode(binding, true)},`);
+      }
+      nestedLines.push('      ];');
+      nestedLines.push('    }');
+      nestedCode = nestedLines.join('\n');
+    }
+    
+    lines.push(`    ${BIND_FN.IF}(r, this.${cond.signalName}, '${cond.id}', \`${escapedTemplate}\`, ${nestedCode});`);
+  }
+  
+  lines.push('  };');
+  
+  return '\n\n' + lines.join('\n');
 };
 
 /**
@@ -310,16 +578,6 @@ const generateStaticTemplate = (content: string): string => {
 };
 
 /**
- * Generate initializeBindings function
- */
-const generateInitBindingsFunction = (bindingsCode: string): string => {
-  if (bindingsCode) {
-    return `\n\n  initializeBindings = () => {\n    // Auto-generated reactive bindings\n${bindingsCode}\n  };`;
-  }
-  return `\n\n  initializeBindings = () => {};`;
-};
-
-/**
  * Generate updated import statement with binding functions
  */
 const generateUpdatedImport = (importInfo: ImportInfo, requiredBindFunctions: string[]): string => {
@@ -333,66 +591,37 @@ const generateUpdatedImport = (importInfo: ImportInfo, requiredBindFunctions: st
 
 /**
  * Process the source file and return transformed source.
- *
- * ## Transformation Example:
- * ```typescript
- * // INPUT:
- * class MyComponent extends Component {
- *   count = signal(0);
- *   render = () => html`<div>${this.count()}</div>`;
- * }
- *
- * // OUTPUT:
- * class MyComponent extends Component {
- *   static template = (() => { const t = document.createElement('template'); t.innerHTML = `<div id="r0">0</div>`; return t; })();
- *   initializeBindings = () => {
- *     __bindText(this.shadowRoot, this.count, 'r0');
- *   };
- *   count = signal(0);
- *   render = () => ``;
- * }
- * ```
  */
 const transformComponentSource = (source: string, filePath: string): string | null => {
-  // Parse source with TypeScript (use cache)
   const sourceFile = sourceCache.parse(filePath, source);
-
-  // Find component class
   const componentClass = findComponentClass(sourceFile);
   if (!componentClass) {
     return null;
   }
 
-  // Find signal initializers (uses shared utility H3)
   const signalInitializers = findSignalInitializers(sourceFile);
-
-  // Find services import (using AST)
   const servicesImport = findServicesImport(sourceFile);
-
-  // Find html templates
   const htmlTemplates = findHtmlTemplates(sourceFile);
 
-  // Collect all edits to apply
   const edits: Array<{ start: number; end: number; replacement: string }> = [];
-  const allBindings: ReactiveBinding[] = [];
+  let allBindings: BindingInfo[] = [];
+  let allConditionals: ConditionalBlock[] = [];
   let idCounter = 0;
   let lastProcessedTemplateContent = '';
+  let hasConditionals = false;
 
-  // Process each html template (B5 - simplified using extractTemplateContent)
   for (const templateInfo of htmlTemplates) {
     let templateContent = extractTemplateContent(templateInfo.node.template, sourceFile);
 
-    // Process template if we have signal expressions
-    if (templateInfo.expressions.length > 0) {
-      const result = processHtmlTemplate(templateContent, signalInitializers, idCounter);
-      templateContent = result.processedContent;
-      allBindings.push(...result.bindings);
-      idCounter = result.nextId;
-    }
+    const result = processHtmlTemplateWithConditionals(templateContent, signalInitializers, idCounter);
+    templateContent = result.processedContent;
+    allBindings = [...allBindings, ...result.bindings];
+    allConditionals = [...allConditionals, ...result.conditionals];
+    idCounter = result.nextId;
+    hasConditionals = hasConditionals || result.hasConditionals;
 
     lastProcessedTemplateContent = templateContent;
 
-    // Replace html`...` with ``
     edits.push({
       start: templateInfo.templateStart,
       end: templateInfo.templateEnd,
@@ -400,7 +629,7 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     });
   }
 
-  // Process css template literals (replace css`...` with `...`)
+  // Process css template literals
   const visitCss = (node: ts.Node) => {
     if (ts.isTaggedTemplateExpression(node) && isCssTemplate(node)) {
       const cssContent = extractTemplateContent(node.template, sourceFile);
@@ -415,16 +644,14 @@ const transformComponentSource = (source: string, filePath: string): string | nu
   visitCss(sourceFile);
 
   // Generate code to inject
-  const bindingsCode = generateBindingsCode(allBindings);
-  const initBindingsFunction = generateInitBindingsFunction(bindingsCode);
+  const initBindingsFunction = generateInitBindingsFunction(allBindings, allConditionals);
 
-  // Generate static template if we have processed content
   let staticTemplateCode = '';
   if (lastProcessedTemplateContent) {
     staticTemplateCode = generateStaticTemplate(lastProcessedTemplateContent);
   }
 
-  // Find class body start position for injection (handles both empty and non-empty classes)
+  // Find class body start position for injection
   let classBodyStart: number | null = null;
   const classStart = componentClass.getStart(sourceFile);
   const classText = componentClass.getText(sourceFile);
@@ -434,11 +661,13 @@ const transformComponentSource = (source: string, filePath: string): string | nu
   }
 
   // Update import if we have bindings
-  if (allBindings.length > 0 && servicesImport) {
+  const hasAnyBindings = allBindings.length > 0 || allConditionals.length > 0;
+  if (hasAnyBindings && servicesImport) {
     const requiredFunctions: string[] = [];
-    if (allBindings.some((b) => b.propertyType === 'style')) requiredFunctions.push(BIND_FN.STYLE);
-    if (allBindings.some((b) => b.propertyType === 'attribute')) requiredFunctions.push(BIND_FN.ATTR);
-    if (allBindings.some((b) => b.propertyType === 'innerText')) requiredFunctions.push(BIND_FN.TEXT);
+    if (allBindings.some((b) => b.type === 'style')) requiredFunctions.push(BIND_FN.STYLE);
+    if (allBindings.some((b) => b.type === 'attr')) requiredFunctions.push(BIND_FN.ATTR);
+    if (allBindings.some((b) => b.type === 'text')) requiredFunctions.push(BIND_FN.TEXT);
+    if (hasConditionals) requiredFunctions.push(BIND_FN.IF);
 
     if (requiredFunctions.length > 0) {
       const newImport = generateUpdatedImport(servicesImport, requiredFunctions);
@@ -450,15 +679,10 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     }
   }
 
-  // Apply all edits using shared utility (H2)
   let result = applyEdits(source, edits);
 
-  // Inject static template and initBindings into class
-  // We do this after other edits since positions change
   if (classBodyStart !== null) {
     const injectedCode = staticTemplateCode + initBindingsFunction;
-
-    // Use regex for this final injection since positions have shifted
     result = result.replace(/class\s+extends\s+Component\s*\{/, (match) => {
       return match + injectedCode;
     });
@@ -472,36 +696,18 @@ const transformComponentSource = (source: string, filePath: string): string | nu
 // ============================================================================
 
 /**
- * Reactive Binding Plugin - Compiles signal bindings at build time
- *
- * ## What it does:
- * Transforms reactive signal expressions in templates into efficient DOM bindings.
- *
- * ## Transformation Example:
- * ```typescript
- * // INPUT:
- * html`<span style="color: ${this.color()}">${this.count()}</span>`
- *
- * // OUTPUT (template):
- * `<span id="r0" style="color: red">0</span>`
- *
- * // OUTPUT (bindings):
- * __bindStyle(this.shadowRoot, this.color, 'r0', 'color');
- * __bindText(this.shadowRoot, this.count, 'r0');
- * ```
+ * Reactive Binding Plugin - Compiles signal bindings and conditionals at build time
  */
 export const ReactiveBindingPlugin: Plugin = {
   name: NAME,
   setup(build) {
     build.onLoad({ filter: /\.ts$/ }, async (args) => {
-      // Skip non-source folders (D2 - early returns)
       if (args.path.includes('scripts') || args.path.includes('node_modules')) {
         return undefined;
       }
 
       const source = await fs.promises.readFile(args.path, 'utf8');
 
-      // Quick checks before expensive AST parsing (D2)
       if (!extendsComponent(source) || !hasHtmlTemplates(source)) {
         return undefined;
       }

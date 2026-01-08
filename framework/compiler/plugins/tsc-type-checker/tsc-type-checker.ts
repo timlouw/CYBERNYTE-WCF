@@ -18,7 +18,7 @@ const runTypeCheck = (): void => {
 
   logger.info(NAME, 'Running TypeScript type check...');
 
-  exec('tsc --noEmit', (error, stdout) => {
+  exec('tsc --noEmit', (error: Error | null, stdout: string) => {
     isRunning = false;
 
     if (error) {

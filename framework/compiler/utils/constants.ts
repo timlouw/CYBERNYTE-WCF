@@ -55,6 +55,7 @@ export const BIND_FN = {
   TEXT: '__bindText',
   STYLE: '__bindStyle',
   ATTR: '__bindAttr',
+  IF: '__bindIf',
 } as const;
 
 /**
