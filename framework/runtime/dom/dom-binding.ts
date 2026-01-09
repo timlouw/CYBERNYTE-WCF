@@ -57,7 +57,8 @@ const tempEl = document.createElement('template');
  */
 export const __bindIf = (root: ShadowRoot, signal: Signal<any>, id: string, template: string, initNested: () => (() => void)[]): (() => void) => {
   let cleanups: (() => void)[] = [];
-  let el = root.getElementById(id);
+  const sel = `[data-b="${id}"]`;
+  let el = root.querySelector(sel);
   const isTemplate = el?.tagName === 'TEMPLATE';
 
   // If it's a template placeholder, we need to insert the actual content first (hidden)
@@ -67,7 +68,7 @@ export const __bindIf = (root: ShadowRoot, signal: Signal<any>, id: string, temp
     if (content) {
       content.style.display = 'none';
       el.replaceWith(content);
-      el = root.getElementById(id);
+      el = root.querySelector(sel);
     }
   }
 
@@ -79,7 +80,7 @@ export const __bindIf = (root: ShadowRoot, signal: Signal<any>, id: string, temp
   // Subscribe and toggle visibility via display
   const unsubscribe = signal.subscribe((value) => {
     const shouldShow = Boolean(value);
-    const currentEl = root.getElementById(id) as HTMLElement;
+    const currentEl = root.querySelector(sel) as HTMLElement;
     if (currentEl) {
       currentEl.style.display = shouldShow ? '' : 'none';
     }
@@ -98,7 +99,8 @@ export const __bindIf = (root: ShadowRoot, signal: Signal<any>, id: string, temp
  */
 export const __bindIfExpr = (root: ShadowRoot, signals: Signal<any>[], evalExpr: () => boolean, id: string, template: string, initNested: () => (() => void)[]): (() => void) => {
   let cleanups: (() => void)[] = [];
-  let el = root.getElementById(id);
+  const sel = `[data-b="${id}"]`;
+  let el = root.querySelector(sel);
   const isTemplate = el?.tagName === 'TEMPLATE';
 
   // If it's a template placeholder, insert actual content first (hidden)
@@ -108,7 +110,7 @@ export const __bindIfExpr = (root: ShadowRoot, signals: Signal<any>[], evalExpr:
     if (content) {
       content.style.display = 'none';
       el.replaceWith(content);
-      el = root.getElementById(id);
+      el = root.querySelector(sel);
     }
   }
 
@@ -119,7 +121,7 @@ export const __bindIfExpr = (root: ShadowRoot, signals: Signal<any>[], evalExpr:
 
   const update = () => {
     const shouldShow = Boolean(evalExpr());
-    const currentEl = root.getElementById(id) as HTMLElement;
+    const currentEl = root.querySelector(sel) as HTMLElement;
     if (currentEl) {
       currentEl.style.display = shouldShow ? '' : 'none';
     }
