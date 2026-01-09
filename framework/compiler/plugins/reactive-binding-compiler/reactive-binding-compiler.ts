@@ -335,9 +335,9 @@ const processConditionalElementHtml = (
   const ifAttrStr = `if="${ifAttr.value}"`;
   html = html.replace(ifAttrStr, '');
 
-  // Add data-b to the opening tag (right after the tag name)
+  // Add ID to the opening tag (right after the tag name)
   const tagNameEnd = element.tagName.length + 1; // +1 for '<'
-  html = html.substring(0, tagNameEnd) + ` data-b="${conditionalId}"` + html.substring(tagNameEnd);
+  html = html.substring(0, tagNameEnd) + ` id="${conditionalId}"` + html.substring(tagNameEnd);
 
   // Replace signal expressions with initial values
   html = replaceExpressionsWithValues(html, signalInitializers);
@@ -387,13 +387,13 @@ const addIdsToNestedElements = (processedHtml: string, rootElement: HtmlElement,
 
     // Build a pattern to match this element's opening tag
     // This is a best-effort approach - complex cases might not match perfectly
-    const tagPattern = new RegExp(`<${el.tagName}(\\s+[^>]*)?(?<!data-b="[^"]*")>`, 'g');
+    const tagPattern = new RegExp(`<${el.tagName}(\\s+[^>]*)?(?<!id="[^"]*")>`, 'g');
 
-    // Try to add data-b if not present
+    // Try to add id if not present
     result = result.replace(tagPattern, (match) => {
-      if (match.includes(`data-b="`)) return match; // Already has data-b
-      // Add data-b after tag name
-      return match.replace(`<${el.tagName}`, `<${el.tagName} data-b="${id}"`);
+      if (match.includes(`id="`)) return match; // Already has an ID
+      // Add ID after tag name
+      return match.replace(`<${el.tagName}`, `<${el.tagName} id="${id}"`);
     });
   });
 
@@ -415,7 +415,7 @@ const generateProcessedHtml = (
 
   // Replace conditional elements with their processed versions or templates
   for (const cond of conditionals) {
-    const replacement = cond.initialValue ? cond.templateContent : `<template data-b="${cond.id}"></template>`;
+    const replacement = cond.initialValue ? cond.templateContent : `<template id="${cond.id}"></template>`;
     edits.push({
       start: cond.startIndex,
       end: cond.endIndex,
@@ -444,20 +444,20 @@ const generateProcessedHtml = (
     edits.push({ start: exprStart, end: exprEnd, replacement });
   }
 
-  // Add data-b to elements that need them (not inside conditionals)
+  // Add IDs to elements that need them (not inside conditionals)
   for (const [element, id] of elementIdMap) {
     // Skip elements that are inside conditionals
     const insideConditional = conditionalRanges.some((r) => element.tagStart >= r.start && element.tagStart < r.end);
     if (insideConditional) continue;
 
-    // Check if element already has a data-b attribute
-    if (element.attributes.has('data-b')) continue;
+    // Check if element already has an id attribute
+    if (element.attributes.has('id')) continue;
 
-    // Add data-b after tag name
+    // Add ID after tag name
     edits.push({
       start: element.tagNameEnd,
       end: element.tagNameEnd,
-      replacement: ` data-b="${id}"`,
+      replacement: ` id="${id}"`,
     });
   }
 
@@ -482,10 +482,9 @@ const generateProcessedHtml = (
 /**
  * Generate a single update statement for a binding (no subscribe wrapper)
  * Returns the code that goes inside the subscription callback
- * @param useBatch - if true, reference elements as $.id instead of id
  */
-const generateBindingUpdateCode = (binding: BindingInfo, useBatch = false): string => {
-  const elRef = useBatch ? `$.${binding.id}` : binding.id;
+const generateBindingUpdateCode = (binding: BindingInfo): string => {
+  const elRef = binding.id;
 
   if (binding.type === 'style') {
     const prop = toCamelCase(binding.property!);
@@ -501,10 +500,9 @@ const generateBindingUpdateCode = (binding: BindingInfo, useBatch = false): stri
 /**
  * Generate initial value assignment for a binding (no subscription)
  * This sets the DOM value directly without going through subscribe
- * @param useBatch - if true, reference elements as $.id instead of id
  */
-const generateInitialValueCode = (binding: BindingInfo, useBatch = false): string => {
-  const elRef = useBatch ? `$.${binding.id}` : binding.id;
+const generateInitialValueCode = (binding: BindingInfo): string => {
+  const elRef = binding.id;
   const signalCall = `this.${binding.signalName}()`;
 
   if (binding.type === 'style') {
@@ -534,17 +532,16 @@ const groupBindingsBySignal = (bindings: BindingInfo[]): Map<string, BindingInfo
 /**
  * Generate consolidated subscription code for a group of bindings to the same signal
  * Uses skipInitial=true since initial values are set directly
- * @param useBatch - if true, reference elements as $.id instead of id
  */
-const generateConsolidatedSubscription = (signalName: string, bindings: BindingInfo[], useBatch = false): string => {
+const generateConsolidatedSubscription = (signalName: string, bindings: BindingInfo[]): string => {
   if (bindings.length === 1) {
     // Single binding - use compact inline form with skipInitial
-    const update = generateBindingUpdateCode(bindings[0], useBatch);
+    const update = generateBindingUpdateCode(bindings[0]);
     return `this.${signalName}.subscribe(v => { ${update}; }, true)`;
   }
 
   // Multiple bindings - consolidate into single subscription with skipInitial
-  const updates = bindings.map((b) => `      ${generateBindingUpdateCode(b, useBatch)};`).join('\n');
+  const updates = bindings.map((b) => `      ${generateBindingUpdateCode(b)};`).join('\n');
   return `this.${signalName}.subscribe(v => {\n${updates}\n    }, true)`;
 };
 
@@ -562,29 +559,23 @@ const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: Con
 
   // Get unique element IDs for caching
   const topLevelIds = [...new Set(topLevelBindings.map((b) => b.id))];
-  const useBatchTopLevel = topLevelIds.length >= 3;
 
-  // Cache refs for top-level elements - batch when 3+ elements
-  if (useBatchTopLevel) {
-    // Batch: collect all elements with data-b in one pass
-    lines.push(`    const $ = {};`);
-    lines.push(`    r.querySelectorAll('[data-b]').forEach(e => $[e.dataset.b] = e);`);
-  } else if (topLevelIds.length > 0) {
-    // Few elements: direct querySelector
+  // Cache refs for top-level elements
+  if (topLevelIds.length > 0) {
     for (const id of topLevelIds) {
-      lines.push(`    const ${id} = r.querySelector('[data-b="${id}"]');`);
+      lines.push(`    const ${id} = r.getElementById('${id}');`);
     }
   }
 
   // Set initial values directly (no subscription overhead)
   for (const binding of topLevelBindings) {
-    lines.push(`    ${generateInitialValueCode(binding, useBatchTopLevel)};`);
+    lines.push(`    ${generateInitialValueCode(binding)};`);
   }
 
   // Group bindings by signal and generate consolidated subscriptions (skipInitial)
   const signalGroups = groupBindingsBySignal(topLevelBindings);
   for (const [signalName, signalBindings] of signalGroups) {
-    lines.push(`    ${generateConsolidatedSubscription(signalName, signalBindings, useBatchTopLevel)};`);
+    lines.push(`    ${generateConsolidatedSubscription(signalName, signalBindings)};`);
   }
 
   // Generate conditional bindings
@@ -596,30 +587,24 @@ const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: Con
     let nestedCode = '() => []';
     if (nestedBindings.length > 0) {
       const nestedIds = [...new Set(nestedBindings.map((b) => b.id))];
-      const useBatchNested = nestedIds.length >= 3;
       const nestedLines: string[] = [];
       nestedLines.push('() => {');
 
-      // Cache refs for nested elements - batch when 3+ elements
-      if (useBatchNested) {
-        nestedLines.push(`      const $ = {};`);
-        nestedLines.push(`      r.querySelectorAll('[data-b]').forEach(e => $[e.dataset.b] = e);`);
-      } else {
-        for (const id of nestedIds) {
-          nestedLines.push(`      const ${id} = r.querySelector('[data-b="${id}"]');`);
-        }
+      // Cache refs for nested elements
+      for (const id of nestedIds) {
+        nestedLines.push(`      const ${id} = r.getElementById('${id}');`);
       }
 
       // Set initial values for nested bindings
       for (const binding of nestedBindings) {
-        nestedLines.push(`      ${generateInitialValueCode(binding, useBatchNested)};`);
+        nestedLines.push(`      ${generateInitialValueCode(binding)};`);
       }
 
       // Group nested bindings by signal and generate consolidated subscriptions
       const nestedSignalGroups = groupBindingsBySignal(nestedBindings);
       nestedLines.push('      return [');
       for (const [signalName, signalBindings] of nestedSignalGroups) {
-        nestedLines.push(`        ${generateConsolidatedSubscription(signalName, signalBindings, useBatchNested)},`);
+        nestedLines.push(`        ${generateConsolidatedSubscription(signalName, signalBindings)},`);
       }
       nestedLines.push('      ];');
       nestedLines.push('    }');
@@ -645,13 +630,16 @@ const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: Con
 };
 
 /**
- * Generate static template code - optimized without IIFE wrapper
+ * Generate static template code
  */
 const generateStaticTemplate = (content: string): string => {
   const escapedContent = content.replace(/`/g, '\\`');
-  // Simplified template assignment without IIFE - saves ~30 bytes per component
   return `
-  static template = (($t) => ($t.innerHTML = \`${escapedContent}\`, $t))(document.createElement('template'));`;
+  static template = (() => {
+    const t = document.createElement('template');
+    t.innerHTML = \`${escapedContent}\`;
+    return t;
+  })();`;
 };
 
 /**
