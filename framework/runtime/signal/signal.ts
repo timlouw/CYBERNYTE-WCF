@@ -3,8 +3,9 @@ export type Signal<T> = {
   subscribe: (callback: (val: T) => void, skipInitial?: boolean) => () => void;
 };
 
-// Batching infrastructure for RAF-based updates
-let pendingUpdates: Set<() => void> | null = null;
+// Batching infrastructure - stores [callback, value] pairs instead of closures
+type PendingUpdate = [callback: (val: any) => void, value: any];
+let pendingUpdates: PendingUpdate[] | null = null;
 let rafScheduled = false;
 
 const flushUpdates = () => {
@@ -12,20 +13,20 @@ const flushUpdates = () => {
     const updates = pendingUpdates;
     pendingUpdates = null;
     rafScheduled = false;
-    for (const update of updates) {
-      update();
+    for (let i = 0; i < updates.length; i++) {
+      updates[i][0](updates[i][1]);
     }
   }
 };
 
-const scheduleUpdate = (callback: () => void) => {
+const scheduleUpdate = (callback: (val: any) => void, value: any) => {
   if (!pendingUpdates) {
-    pendingUpdates = new Set();
+    pendingUpdates = [];
   }
-  pendingUpdates.add(callback);
+  pendingUpdates.push([callback, value]);
   if (!rafScheduled) {
     rafScheduled = true;
-    queueMicrotask(flushUpdates); // Use microtask for faster batching than RAF
+    queueMicrotask(flushUpdates);
   }
 };
 
@@ -42,9 +43,9 @@ export const signal = <T>(initialValue: T): Signal<T> => {
       value = newValue!;
       // Batch DOM updates via microtask (only if we have subscribers)
       if (subscribers) {
-        for (const callback of subscribers) {
-          scheduleUpdate(() => callback(value));
-        }
+        subscribers.forEach((callback) => {
+          scheduleUpdate(callback, value);
+        });
       }
     }
     return value;

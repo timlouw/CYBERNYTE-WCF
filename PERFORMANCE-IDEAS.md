@@ -162,6 +162,6 @@ if (value !== newValue) { ... }
 
 - [x] #4 - Lazy nested binding initialization
 - [x] Conditional binding uses real DOM insertion/removal (not display:none)
-- [ ] #1 - Closure overhead in scheduleUpdate
+- [x] #1 - Closure overhead in scheduleUpdate (stores [callback, value] pairs instead)
+- [x] #3 - for...of iterator allocation (using forEach and indexed loops)
 - [ ] #2 - getElementById caching
-- [ ] #3 - for...of iterator allocation
