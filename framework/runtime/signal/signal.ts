@@ -33,6 +33,11 @@ export const signal = <T>(initialValue: T): Signal<T> => {
   let value = initialValue;
   const subscribers = new Set<(val: T) => void>();
 
+  // Pre-allocate unsubscribe function factory to reduce closure allocation
+  const createUnsubscribe = (callback: (val: T) => void) => () => {
+    subscribers.delete(callback);
+  };
+
   function reactiveFunction(newValue?: T) {
     if (arguments.length === 0) {
       return value;
@@ -53,9 +58,7 @@ export const signal = <T>(initialValue: T): Signal<T> => {
     if (!skipInitial) {
       callback(value); // Synchronous initial call - no batching needed
     }
-    return () => {
-      subscribers.delete(callback);
-    };
+    return createUnsubscribe(callback);
   };
 
   return reactiveFunction as Signal<T>;

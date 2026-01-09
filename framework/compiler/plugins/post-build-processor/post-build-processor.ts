@@ -173,6 +173,12 @@ const copyIndexHTMLIntoDistAndStartServer = async (hashedFileNames: Record<strin
   const { minifySelectorsInHTML } = await import('../minification/minification.js');
   updatedData = minifySelectorsInHTML(updatedData);
 
+  // Minify HTML output (production only)
+  if (isProd) {
+    const { minifyHTML } = await import('../minification/template-minifier.js');
+    updatedData = minifyHTML(updatedData);
+  }
+
   // Inject live reload script (dev serve mode only)
   if (serve && !isProd) {
     updatedData = injectLiveReloadScript(updatedData);

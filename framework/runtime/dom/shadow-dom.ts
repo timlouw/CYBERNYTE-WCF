@@ -23,7 +23,8 @@ export abstract class Component extends HTMLElement {
   abstract render: () => string;
 }
 
-// Overloaded function declarations for `registerComponent`
+// CSS containment prefix for all components
+const containmentCSS = ':host{contain:layout style;display:block}';
 
 // OVERLOAD For 'component' type, return a callable function that accepts props
 export function registerComponent<T extends ComponentProps>(config: CreateComponentConfig & { type: 'component' }, component: InputComponent): ComponentHTMLSelector<T>;
@@ -34,7 +35,7 @@ export function registerComponent(config: CreateComponentConfig & { type: 'page'
 // Single function implementation to handle both cases
 export function registerComponent<T extends ComponentProps>(config: CreateComponentConfig, component: InputComponent): ComponentHTMLSelector<T> | PageHTMLSelector {
   const styleSheet = new CSSStyleSheet();
-  styleSheet.replaceSync(component.styles);
+  styleSheet.replaceSync(containmentCSS + component.styles);
 
   window.customElements.define(
     config.selector,
