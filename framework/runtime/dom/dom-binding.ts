@@ -41,49 +41,73 @@ export const __bindText = (root: ShadowRoot, signal: Signal<any>, id: string): v
   });
 };
 
-// Reusable template element for creating content
+// Reusable template element for parsing HTML
 const tempEl = document.createElement('template');
 
 /**
- * Bind conditional rendering using visibility toggling to prevent CLS.
- * Uses display:none instead of DOM removal to avoid layout shifts.
+ * Bind conditional rendering using real DOM insertion/removal.
+ * Uses template placeholder when hidden, swaps in real content when shown.
+ * Lazily initializes nested bindings only when condition first becomes true.
  *
  * @param root - Shadow root to search in
  * @param signal - Signal controlling visibility
  * @param id - Element/placeholder ID
  * @param template - HTML string to insert when condition is true
- * @param initNested - Function that initializes nested bindings, returns unsubscribe functions
+ * @param initNested - Function that initializes nested bindings, returns cleanup functions
  * @returns Cleanup function to remove this binding
  */
 export const __bindIf = (root: ShadowRoot, signal: Signal<any>, id: string, template: string, initNested: () => (() => void)[]): (() => void) => {
   let cleanups: (() => void)[] = [];
-  let el = root.getElementById(id);
-  const isTemplate = el?.tagName === 'TEMPLATE';
+  let bindingsInitialized = false;
 
-  // If it's a template placeholder, we need to insert the actual content first (hidden)
-  if (isTemplate && el) {
-    tempEl.innerHTML = template;
-    const content = tempEl.content.firstElementChild as HTMLElement;
-    if (content) {
-      content.style.display = 'none';
-      el.replaceWith(content);
-      el = root.getElementById(id);
+  // Get placeholder template element
+  const placeholder = root.getElementById(id) as HTMLTemplateElement | null;
+
+  // Parse the template content once
+  tempEl.innerHTML = template;
+  const contentFragment = tempEl.content.cloneNode(true) as DocumentFragment;
+  const contentEl = contentFragment.firstElementChild as HTMLElement;
+
+  // Track current state: either placeholder is in DOM, or contentEl is
+  let currentlyShowing = false;
+
+  const show = () => {
+    if (currentlyShowing) return;
+    currentlyShowing = true;
+
+    const current = root.getElementById(id);
+    if (current && contentEl) {
+      current.replaceWith(contentEl);
+
+      // Lazily initialize bindings on first show
+      if (!bindingsInitialized) {
+        bindingsInitialized = true;
+        cleanups = initNested();
+      }
     }
-  }
+  };
 
-  // Now el is the actual element - init bindings
-  if (el) {
-    cleanups = initNested();
-  }
+  const hide = () => {
+    if (!currentlyShowing) return;
+    currentlyShowing = false;
 
-  // Subscribe and toggle visibility via display
+    const current = root.getElementById(id);
+    if (current && placeholder) {
+      // Create a new placeholder template to swap back in
+      const newPlaceholder = document.createElement('template');
+      newPlaceholder.id = id;
+      current.replaceWith(newPlaceholder);
+    }
+  };
+
+  // Subscribe to signal
   const unsubscribe = signal.subscribe((value) => {
-    const shouldShow = Boolean(value);
-    const currentEl = root.getElementById(id) as HTMLElement;
-    if (currentEl) {
-      currentEl.style.display = shouldShow ? '' : 'none';
+    if (Boolean(value)) {
+      show();
+    } else {
+      hide();
     }
-  }, false); // Don't skip initial - we want to set initial visibility
+  }, false);
 
   return () => {
     unsubscribe();
@@ -93,35 +117,59 @@ export const __bindIf = (root: ShadowRoot, signal: Signal<any>, id: string, temp
 };
 
 /**
- * Bind conditional rendering with a complex expression using visibility toggling.
- * Uses display:none instead of DOM removal to avoid layout shifts.
+ * Bind conditional rendering with a complex expression using real DOM insertion/removal.
+ * Uses template placeholder when hidden, swaps in real content when shown.
+ * Lazily initializes nested bindings only when condition first becomes true.
  */
 export const __bindIfExpr = (root: ShadowRoot, signals: Signal<any>[], evalExpr: () => boolean, id: string, template: string, initNested: () => (() => void)[]): (() => void) => {
   let cleanups: (() => void)[] = [];
-  let el = root.getElementById(id);
-  const isTemplate = el?.tagName === 'TEMPLATE';
+  let bindingsInitialized = false;
 
-  // If it's a template placeholder, insert actual content first (hidden)
-  if (isTemplate && el) {
-    tempEl.innerHTML = template;
-    const content = tempEl.content.firstElementChild as HTMLElement;
-    if (content) {
-      content.style.display = 'none';
-      el.replaceWith(content);
-      el = root.getElementById(id);
+  // Get placeholder template element
+  const placeholder = root.getElementById(id) as HTMLTemplateElement | null;
+
+  // Parse the template content once
+  tempEl.innerHTML = template;
+  const contentFragment = tempEl.content.cloneNode(true) as DocumentFragment;
+  const contentEl = contentFragment.firstElementChild as HTMLElement;
+
+  // Track current state
+  let currentlyShowing = false;
+
+  const show = () => {
+    if (currentlyShowing) return;
+    currentlyShowing = true;
+
+    const current = root.getElementById(id);
+    if (current && contentEl) {
+      current.replaceWith(contentEl);
+
+      // Lazily initialize bindings on first show
+      if (!bindingsInitialized) {
+        bindingsInitialized = true;
+        cleanups = initNested();
+      }
     }
-  }
+  };
 
-  // Init bindings
-  if (el) {
-    cleanups = initNested();
-  }
+  const hide = () => {
+    if (!currentlyShowing) return;
+    currentlyShowing = false;
+
+    const current = root.getElementById(id);
+    if (current && placeholder) {
+      // Create a new placeholder template to swap back in
+      const newPlaceholder = document.createElement('template');
+      newPlaceholder.id = id;
+      current.replaceWith(newPlaceholder);
+    }
+  };
 
   const update = () => {
-    const shouldShow = Boolean(evalExpr());
-    const currentEl = root.getElementById(id) as HTMLElement;
-    if (currentEl) {
-      currentEl.style.display = shouldShow ? '' : 'none';
+    if (Boolean(evalExpr())) {
+      show();
+    } else {
+      hide();
     }
   };
 
