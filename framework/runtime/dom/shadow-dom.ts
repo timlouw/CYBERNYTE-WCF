@@ -46,7 +46,7 @@ export function registerComponent<T extends ComponentProps>(config: CreateCompon
       }
 
       private render(): string {
-        return html``;
+        return '';
       }
 
       private createComponent() {

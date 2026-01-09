@@ -31,12 +31,8 @@ const scheduleUpdate = (callback: () => void) => {
 
 export const signal = <T>(initialValue: T): Signal<T> => {
   let value = initialValue;
-  const subscribers = new Set<(val: T) => void>();
-
-  // Pre-allocate unsubscribe function factory to reduce closure allocation
-  const createUnsubscribe = (callback: (val: T) => void) => () => {
-    subscribers.delete(callback);
-  };
+  // Lazy initialize subscribers - saves memory for signals that are never subscribed to
+  let subscribers: Set<(val: T) => void> | null = null;
 
   function reactiveFunction(newValue?: T) {
     if (arguments.length === 0) {
@@ -44,9 +40,11 @@ export const signal = <T>(initialValue: T): Signal<T> => {
     }
     if (value !== newValue) {
       value = newValue!;
-      // Batch DOM updates via microtask
-      for (const callback of subscribers) {
-        scheduleUpdate(() => callback(value));
+      // Batch DOM updates via microtask (only if we have subscribers)
+      if (subscribers) {
+        for (const callback of subscribers) {
+          scheduleUpdate(() => callback(value));
+        }
       }
     }
     return value;
@@ -54,11 +52,14 @@ export const signal = <T>(initialValue: T): Signal<T> => {
 
   // skipInitial: when true, don't call callback immediately (initial values set directly)
   (reactiveFunction as any).subscribe = (callback: (val: T) => void, skipInitial?: boolean) => {
+    if (!subscribers) subscribers = new Set();
     subscribers.add(callback);
     if (!skipInitial) {
       callback(value); // Synchronous initial call - no batching needed
     }
-    return createUnsubscribe(callback);
+    return () => {
+      subscribers!.delete(callback);
+    };
   };
 
   return reactiveFunction as Signal<T>;
