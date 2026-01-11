@@ -45,6 +45,9 @@ export interface HtmlElement {
   isSelfClosing: boolean;
   isVoid: boolean;
   textContent: TextNode[]; // Text nodes directly inside this element
+  whenDirective?: string; // The "${when(...)}" directive if present
+  whenDirectiveStart?: number; // Start position of the when directive
+  whenDirectiveEnd?: number; // End position of the when directive
 }
 
 export interface TextNode {
@@ -55,14 +58,14 @@ export interface TextNode {
 
 export interface BindingInfo {
   element: HtmlElement;
-  type: 'text' | 'style' | 'attr' | 'if';
+  type: 'text' | 'style' | 'attr' | 'when';
   signalName: string;
-  signalNames?: string[]; // For complex if expressions with multiple signals
+  signalNames?: string[]; // For complex when expressions with multiple signals
   property?: string; // For style/attr bindings
   expressionStart: number; // Position of ${
   expressionEnd: number; // Position after }
   fullExpression: string; // The full ${this.signal()} string
-  /** For 'if' bindings: the inner JS expression (without ${...}) */
+  /** For 'when' bindings: the inner JS expression (without ${...} and when()) */
   jsExpression?: string;
 }
 
@@ -250,6 +253,31 @@ export function parseHtmlTemplate(html: string): ParsedTemplate {
           pos++; // Skip the '>'
           textContent = '';
           textStart = pos + 1;
+        } else if (char === '"' && html.substring(pos, pos + 8) === '"${when(') {
+          // Handle "${when(...)}" directive - find the closing "}" and "
+          const directiveStart = pos;
+          let braceDepth = 0;
+          let parenDepth = 0;
+          let i = pos + 2; // Skip past "$
+          while (i < html.length) {
+            if (html[i] === '{') braceDepth++;
+            else if (html[i] === '}') {
+              braceDepth--;
+              if (braceDepth === 0 && html[i + 1] === '"') {
+                // Found the end of the directive
+                const directiveEnd = i + 2; // Include closing "
+                const directive = html.substring(directiveStart, directiveEnd);
+                currentElement!.whenDirective = directive;
+                currentElement!.whenDirectiveStart = directiveStart;
+                currentElement!.whenDirectiveEnd = directiveEnd;
+                pos = directiveEnd - 1; // -1 because loop will increment
+                break;
+              }
+            } else if (html[i] === '(') parenDepth++;
+            else if (html[i] === ')') parenDepth--;
+            i++;
+          }
+          state = 'TAG_SPACE';
         } else if (/[a-zA-Z_:@]/.test(char)) {
           state = 'ATTR_NAME';
           attrName = char;
@@ -427,6 +455,9 @@ function createEmptyElement(tagName: string, tagStart: number, tagNameEnd: numbe
     isSelfClosing: false,
     isVoid: VOID_ELEMENTS.has(tagName.toLowerCase()),
     textContent: [],
+    whenDirective: undefined,
+    whenDirectiveStart: undefined,
+    whenDirectiveEnd: undefined,
   };
 }
 
@@ -452,41 +483,41 @@ function findBindingsInText(text: string, textStart: number, parent: HtmlElement
 }
 
 /**
- * Find bindings in element attributes (style, if, regular attributes)
+ * Find bindings in element attributes (style, when, regular attributes)
  */
 function findBindingsInAttributes(element: HtmlElement, bindings: BindingInfo[]): void {
-  for (const [name, attr] of element.attributes) {
-    // Check for if directive
-    if (name === 'if') {
-      // Match ${...} and extract inner expression
-      const exprMatch = attr.value.match(/^\$\{(.+)\}$/);
-      if (exprMatch) {
-        const innerExpr = exprMatch[1];
-        // Find all signal getters: this.signalName() patterns
-        const signalRegex = /this\.(\w+)\(\)/g;
-        const signals: string[] = [];
-        let signalMatch: RegExpExecArray | null;
-        while ((signalMatch = signalRegex.exec(innerExpr)) !== null) {
-          if (!signals.includes(signalMatch[1])) {
-            signals.push(signalMatch[1]);
-          }
-        }
-
-        if (signals.length > 0) {
-          bindings.push({
-            element,
-            type: 'if',
-            signalName: signals[0], // Primary signal (for backwards compatibility)
-            signalNames: signals, // All signals in the expression
-            expressionStart: attr.valueStart,
-            expressionEnd: attr.valueEnd,
-            fullExpression: attr.value,
-            jsExpression: innerExpr, // The raw JS expression like "!this._loading()"
-          });
+  // Check for when directive ("${when(...)}" syntax)
+  if (element.whenDirective) {
+    // Match "${when(...)}" and extract the inner expression
+    const whenMatch = element.whenDirective.match(/^"\$\{when\((.+)\)\}"$/);
+    if (whenMatch) {
+      const innerExpr = whenMatch[1];
+      // Find all signal getters: this.signalName() patterns
+      const signalRegex = /this\.(\w+)\(\)/g;
+      const signals: string[] = [];
+      let signalMatch: RegExpExecArray | null;
+      while ((signalMatch = signalRegex.exec(innerExpr)) !== null) {
+        if (!signals.includes(signalMatch[1])) {
+          signals.push(signalMatch[1]);
         }
       }
-      continue;
+
+      if (signals.length > 0) {
+        bindings.push({
+          element,
+          type: 'when',
+          signalName: signals[0], // Primary signal (for backwards compatibility)
+          signalNames: signals, // All signals in the expression
+          expressionStart: element.whenDirectiveStart!,
+          expressionEnd: element.whenDirectiveEnd!,
+          fullExpression: element.whenDirective,
+          jsExpression: innerExpr, // The raw JS expression like "!this._loading()"
+        });
+      }
     }
+  }
+
+  for (const [name, attr] of element.attributes) {
 
     // Check for style bindings
     if (name === 'style') {
@@ -564,6 +595,13 @@ export function findElements(roots: HtmlElement[], predicate: (el: HtmlElement) 
  */
 export function findElementsWithAttribute(roots: HtmlElement[], attrName: string): HtmlElement[] {
   return findElements(roots, (el) => el.attributes.has(attrName));
+}
+
+/**
+ * Find elements with the when directive ("${when(...)}" syntax)
+ */
+export function findElementsWithWhenDirective(roots: HtmlElement[]): HtmlElement[] {
+  return findElements(roots, (el) => el.whenDirective !== undefined);
 }
 
 /**

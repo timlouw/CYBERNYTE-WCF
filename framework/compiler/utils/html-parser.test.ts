@@ -10,7 +10,7 @@ import {
   parseHtmlTemplate,
   walkElements,
   findElements,
-  findElementsWithAttribute,
+  findElementsWithWhenDirective,
   getElementHtml,
   getElementInnerHtml,
   getBindingsForElement,
@@ -248,10 +248,10 @@ describe('Signal Binding Detection', () => {
     expect(result.bindings[0].property).toBe('value');
   });
 
-  test('detects if directive', () => {
-    const result = parseHtmlTemplate('<div if="${this.isVisible()}"></div>');
+  test('detects when directive', () => {
+    const result = parseHtmlTemplate('<div "${when(this.isVisible())}"></div>');
     expect(result.bindings.length).toBe(1);
-    expect(result.bindings[0].type).toBe('if');
+    expect(result.bindings[0].type).toBe('when');
     expect(result.bindings[0].signalName).toBe('isVisible');
   });
 
@@ -292,16 +292,16 @@ describe('Signal Binding Detection', () => {
 // ============================================================================
 
 describe('Complex Binding Scenarios', () => {
-  test('handles if directive with nested bindings', () => {
-    const html = '<div if="${this.visible()}"><span>${this.text()}</span></div>';
+  test('handles when directive with nested bindings', () => {
+    const html = '<div "${when(this.visible())}"><span>${this.text()}</span></div>';
     const result = parseHtmlTemplate(html);
 
     expect(result.bindings.length).toBe(2);
 
-    const ifBinding = result.bindings.find((b) => b.type === 'if');
+    const whenBinding = result.bindings.find((b) => b.type === 'when');
     const textBinding = result.bindings.find((b) => b.type === 'text');
 
-    expect(ifBinding?.signalName).toBe('visible');
+    expect(whenBinding?.signalName).toBe('visible');
     expect(textBinding?.signalName).toBe('text');
   });
 
@@ -309,7 +309,7 @@ describe('Complex Binding Scenarios', () => {
     const html = `
       <div class="\${this.cls1()}">
         <section style="color: \${this.color()}">
-          <article if="\${this.show()}">
+          <article "\${when(this.show())}">
             <p>\${this.para()}</p>
             <span>\${this.span()}</span>
           </article>
@@ -454,13 +454,13 @@ describe('Utility Functions', () => {
     expect(withClass.length).toBe(2);
   });
 
-  test('findElementsWithAttribute works', () => {
-    const html = '<div if="${this.show()}"><span></span></div>';
+  test('findElementsWithWhenDirective works', () => {
+    const html = '<div "${when(this.show())}"><span></span></div>';
     const result = parseHtmlTemplate(html);
 
-    const withIf = findElementsWithAttribute(result.roots, 'if');
-    expect(withIf.length).toBe(1);
-    expect(withIf[0].tagName).toBe('div');
+    const withWhen = findElementsWithWhenDirective(result.roots);
+    expect(withWhen.length).toBe(1);
+    expect(withWhen[0].tagName).toBe('div');
   });
 
   test('getElementHtml returns full element HTML', () => {
@@ -480,11 +480,11 @@ describe('Utility Functions', () => {
   });
 
   test('getBindingsForElement includes nested bindings', () => {
-    const html = '<div if="${this.show()}"><span>${this.text()}</span></div><p>${this.other()}</p>';
+    const html = '<div "${when(this.show())}"><span>${this.text()}</span></div><p>${this.other()}</p>';
     const result = parseHtmlTemplate(html);
 
     const divBindings = getBindingsForElement(result.roots[0], result.bindings);
-    expect(divBindings.length).toBe(2); // if and text, not other
+    expect(divBindings.length).toBe(2); // when and text, not other
   });
 
   test('isElementInside correctly identifies ancestry', () => {
@@ -510,7 +510,7 @@ describe('Real-World Templates', () => {
   test('handles component-like template', () => {
     const html = `
       <div class="always-visible">Always visible - Count: \${this.count()}</div>
-      <div if="\${this.isVisible()}" class="conditional-box" style="background-color: \${this.color()}">
+      <div "\${when(this.isVisible())}" class="conditional-box" style="background-color: \${this.color()}">
         <span>Conditional content - Count: \${this.count()}</span>
         <p>Text: \${this.text()}</p>
       </div>
@@ -524,8 +524,8 @@ describe('Real-World Templates', () => {
     // Check bindings
     expect(result.bindings.length).toBe(5);
 
-    const ifBinding = result.bindings.find((b) => b.type === 'if');
-    expect(ifBinding?.signalName).toBe('isVisible');
+    const whenBinding = result.bindings.find((b) => b.type === 'when');
+    expect(whenBinding?.signalName).toBe('isVisible');
 
     const styleBinding = result.bindings.find((b) => b.type === 'style');
     expect(styleBinding?.signalName).toBe('color');
@@ -569,7 +569,7 @@ describe('Real-World Templates', () => {
           </tr>
         </thead>
         <tbody>
-          <tr if="\${this.hasData()}">
+          <tr "\${when(this.hasData())}">
             <td>\${this.col1Value()}</td>
             <td style="color: \${this.col2Color()}">\${this.col2Value()}</td>
           </tr>
@@ -583,8 +583,8 @@ describe('Real-World Templates', () => {
     const bindings = result.bindings;
     expect(bindings.length).toBe(6);
 
-    const ifBinding = bindings.find((b) => b.type === 'if');
-    expect(ifBinding?.signalName).toBe('hasData');
+    const whenBinding = bindings.find((b) => b.type === 'when');
+    expect(whenBinding?.signalName).toBe('hasData');
   });
 
   test('handles navigation template', () => {
@@ -595,7 +595,7 @@ describe('Real-World Templates', () => {
           <li class="\${this.item2Active()}"><a href="#">About</a></li>
           <li class="\${this.item3Active()}"><a href="#">Contact</a></li>
         </ul>
-        <div if="\${this.showSearch()}" class="search">
+        <div "\${when(this.showSearch())}" class="search">
           <input type="search" value="\${this.searchQuery()}">
         </div>
       </nav>
@@ -721,9 +721,9 @@ describe('Stress Tests', () => {
       <div class="\${this.c1()}">
         <div class="\${this.c2()}">
           <div class="\${this.c3()}">
-            <span if="\${this.show1()}">\${this.t1()}</span>
-            <span if="\${this.show2()}">\${this.t2()}</span>
-            <span if="\${this.show3()}">\${this.t3()}</span>
+            <span "\${when(this.show1())}">\${this.t1()}</span>
+            <span "\${when(this.show2())}">\${this.t2()}</span>
+            <span "\${when(this.show3())}">\${this.t3()}</span>
           </div>
         </div>
       </div>
@@ -734,7 +734,7 @@ describe('Stress Tests', () => {
     `;
     const result = parseHtmlTemplate(html);
 
-    // 4 class attrs + 3 ifs + 5 text + 4 styles = 16 bindings
+    // 4 class attrs + 3 whens + 5 text + 4 styles = 16 bindings
     expect(result.bindings.length).toBe(16);
   });
 });

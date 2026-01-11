@@ -3,7 +3,7 @@
  *
  * Transforms signal expressions in templates into efficient DOM bindings.
  * Generates static templates and binding initialization code.
- * Supports conditional rendering with if="${this.signal()}" directives.
+ * Supports conditional rendering with "${when(this.signal())}" directives.
  *
  * Uses a state machine HTML parser for robust handling of nested elements,
  * expressions in attributes, and complex template structures.
@@ -14,7 +14,7 @@
  * //         + initializeBindings() { const b0 = r.getElementById('b0'); this.count.subscribe(v => { b0.textContent = v; }); }
  *
  * @example Conditional rendering
- * // Before: html`<div if="${this.isVisible()}">${this.count()}</div>`
+ * // Before: html`<div "${when(this.isVisible())}">${this.count()}</div>`
  * // After:  static template with `<div id="b0">0</div>` (if initial true) or `<template id="b0"></template>` (if initial false)
  * //         + __bindIf(r, this.isVisible, 'b0', '<div id="b0">0</div>', () => { ... nested bindings ... });
  */
@@ -42,7 +42,7 @@ import {
 import {
   parseHtmlTemplate,
   walkElements,
-  findElementsWithAttribute,
+  findElementsWithWhenDirective,
   getElementHtml,
   getBindingsForElement,
   type HtmlElement,
@@ -190,8 +190,8 @@ const processHtmlTemplateWithConditionals = (
   // Track which elements need IDs and what ID they get
   const elementIdMap = new Map<HtmlElement, string>();
 
-  // Find all conditional elements (those with if attribute)
-  const conditionalElements = findElementsWithAttribute(parsed.roots, 'if');
+  // Find all conditional elements (those with when directive)
+  const conditionalElements = findElementsWithWhenDirective(parsed.roots);
   const conditionalElementSet = new Set(conditionalElements);
 
   // Create a set of all elements that are inside conditionals (for filtering)
@@ -206,12 +206,12 @@ const processHtmlTemplateWithConditionals = (
 
   // First pass: Process conditionals and assign IDs
   for (const condEl of conditionalElements) {
-    // Find the 'if' binding for this element to get parsed expression info
-    const ifBinding = parsed.bindings.find((b) => b.element === condEl && b.type === 'if');
-    if (!ifBinding || !ifBinding.jsExpression) continue;
+    // Find the 'when' binding for this element to get parsed expression info
+    const whenBinding = parsed.bindings.find((b) => b.element === condEl && b.type === 'when');
+    if (!whenBinding || !whenBinding.jsExpression) continue;
 
-    const signalNames = ifBinding.signalNames || [ifBinding.signalName];
-    const jsExpression = ifBinding.jsExpression;
+    const signalNames = whenBinding.signalNames || [whenBinding.signalName];
+    const jsExpression = whenBinding.jsExpression;
 
     const conditionalId = `b${idCounter++}`;
     elementIdMap.set(condEl, conditionalId);
@@ -250,8 +250,8 @@ const processHtmlTemplateWithConditionals = (
         elementId = elementIdMap.get(binding.element)!;
       }
 
-      // Skip the 'if' binding itself
-      if (binding.type === 'if') continue;
+      // Skip the 'when' binding itself
+      if (binding.type === 'when') continue;
 
       nestedBindings.push({
         id: elementId,
@@ -287,8 +287,8 @@ const processHtmlTemplateWithConditionals = (
     if (elementsInsideConditionals.has(binding.element)) continue;
     // Skip if this is a conditional element (already processed)
     if (conditionalElementSet.has(binding.element)) continue;
-    // Skip 'if' bindings (they're handled as conditionals)
-    if (binding.type === 'if') continue;
+    // Skip 'when' bindings (they're handled as conditionals)
+    if (binding.type === 'when') continue;
 
     // Get or assign ID for the element
     if (!elementIdMap.has(binding.element)) {
@@ -330,10 +330,10 @@ const processConditionalElementHtml = (
 ): string => {
   let html = getElementHtml(element, originalHtml);
 
-  // Remove the if attribute
-  const ifAttr = element.attributes.get('if')!;
-  const ifAttrStr = `if="${ifAttr.value}"`;
-  html = html.replace(ifAttrStr, '');
+  // Remove the when directive ("${when(...)}")
+  if (element.whenDirective) {
+    html = html.replace(element.whenDirective, '');
+  }
 
   // Add ID to the opening tag (right after the tag name)
   const tagNameEnd = element.tagName.length + 1; // +1 for '<'
@@ -378,11 +378,9 @@ const addIdsToNestedElements = (processedHtml: string, rootElement: HtmlElement,
     // Use the tag name and any existing attributes to find it
     const existingAttrs: string[] = [];
     for (const [name, attr] of el.attributes) {
-      if (name !== 'if') {
-        // Use the processed attribute value (with expressions replaced)
-        const processedValue = replaceExpressionsWithValues(attr.value, new Map());
-        existingAttrs.push(`${name}="${processedValue}"`);
-      }
+      // Use the processed attribute value (with expressions replaced)
+      const processedValue = replaceExpressionsWithValues(attr.value, new Map());
+      existingAttrs.push(`${name}="${processedValue}"`);
     }
 
     // Build a pattern to match this element's opening tag

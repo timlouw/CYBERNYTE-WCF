@@ -23,12 +23,12 @@ export const MyElementComponent = registerComponent<MyElementProps>(
       return html`
         <div class="box" style="background-color: ${this._color()}"></div>
         <div class="box" style="background-color: ${this._color()}"></div>
-        <div if="${this._loading()}" class="box" style="background-color: ${this._color()}"></div>
-        <div if="${this._loading()}" class="box" style="background-color: ${this._color()}"></div>
+        <div "${when(this._loading())}" class="box" style="background-color: ${this._color()}"></div>
+        <div "${when(this._loading())}" class="box" style="background-color: ${this._color()}"></div>
         <div class="box2">${this._text()}</div>
         <div class="box2">${this._text()}</div>
-        <div if="${!this._loading() && this.test}" class="box2">${this._text()}</div>
-        <div if="${!this._loading() && this.test}" class="box2">${this._text()}</div>
+        <div "${when(!this._loading() && this.test)}" class="box2">${this._text()}</div>
+        <div "${when(!this._loading() && this.test)}" class="box2">${this._text()}</div>
       `;
     };
 
