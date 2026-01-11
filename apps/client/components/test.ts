@@ -10,12 +10,10 @@ export const MyElementComponent = registerComponent<MyElementProps>(
   class extends Component {
     private _color = signal(this.getAttribute('color'));
     private _text = signal('asdfs');
-    private _loading = signal(false);
+    private _loading = signal(true);
     private test = true;
 
     render = () => {
-      this._update();
-
       setTimeout(() => {
         this._update();
       }, 1500);
@@ -28,7 +26,9 @@ export const MyElementComponent = registerComponent<MyElementProps>(
         <div class="box2">${this._text()}</div>
         <div class="box2">${this._text()}</div>
         <div "${when(!this._loading() && this.test)}" class="box2">${this._text()}</div>
-        <div "${when(!this._loading() && this.test)}" class="box2">${this._text()}</div>
+        <div class="status">
+          ${whenElse(this._loading(), html`<div>Loading...</div>`, html`<div>Ready!</div>`)}
+        </div>
       `;
     };
 

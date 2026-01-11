@@ -58,15 +58,19 @@ export interface TextNode {
 
 export interface BindingInfo {
   element: HtmlElement;
-  type: 'text' | 'style' | 'attr' | 'when';
+  type: 'text' | 'style' | 'attr' | 'when' | 'whenElse';
   signalName: string;
-  signalNames?: string[]; // For complex when expressions with multiple signals
+  signalNames?: string[]; // For complex when/whenElse expressions with multiple signals
   property?: string; // For style/attr bindings
   expressionStart: number; // Position of ${
   expressionEnd: number; // Position after }
   fullExpression: string; // The full ${this.signal()} string
-  /** For 'when' bindings: the inner JS expression (without ${...} and when()) */
+  /** For 'when'/'whenElse' bindings: the inner JS expression (the condition) */
   jsExpression?: string;
+  /** For 'whenElse' bindings: the then template HTML */
+  thenTemplate?: string;
+  /** For 'whenElse' bindings: the else template HTML */
+  elseTemplate?: string;
 }
 
 export interface ParsedTemplate {
@@ -108,6 +112,11 @@ export function parseHtmlTemplate(html: string): ParsedTemplate {
 
   // Comment tracking
   let commentBuffer = '';
+
+  // Track ${...} expressions in text to avoid parsing nested html`` as HTML
+  let exprBraceDepth = 0; // > 0 means we're inside ${...}
+  let inTemplateBacktick = false; // inside html`...` within an expression
+  let templateBraceDepth = 0; // for ${} inside template literals
 
   const flushText = () => {
     if (textContent.trim()) {
@@ -159,6 +168,84 @@ export function parseHtmlTemplate(html: string): ParsedTemplate {
 
     switch (state) {
       case 'TEXT':
+        // Track ${...} expressions to avoid parsing nested html`` as HTML
+        if (char === '$' && nextChar === '{' && !inTemplateBacktick) {
+          // Start of ${...} expression
+          if (textContent === '') {
+            textStart = pos;
+          }
+          textContent += '${';
+          pos += 2;
+          exprBraceDepth = 1;
+          continue;
+        }
+
+        // Inside ${...} expression - track braces and backticks
+        if (exprBraceDepth > 0) {
+          if (textContent === '') {
+            textStart = pos;
+          }
+
+          if (inTemplateBacktick) {
+            // Inside html`...` template
+            if (char === '$' && nextChar === '{') {
+              // Nested ${} inside template
+              templateBraceDepth++;
+              textContent += '${';
+              pos += 2;
+              continue;
+            }
+            if (char === '}' && templateBraceDepth > 0) {
+              // Closing nested ${} inside template
+              templateBraceDepth--;
+              textContent += char;
+              pos++;
+              continue;
+            }
+            if (char === '`' && templateBraceDepth === 0) {
+              // Closing backtick of html`...`
+              inTemplateBacktick = false;
+              textContent += char;
+              pos++;
+              continue;
+            }
+            // Regular char inside template - just accumulate
+            textContent += char;
+            pos++;
+            continue;
+          }
+
+          // Not inside template literal, but inside ${...}
+          if (char === '`') {
+            // Start of template literal (html`...`)
+            inTemplateBacktick = true;
+            templateBraceDepth = 0;
+            textContent += char;
+            pos++;
+            continue;
+          }
+          if (char === '{') {
+            exprBraceDepth++;
+            textContent += char;
+            pos++;
+            continue;
+          }
+          if (char === '}') {
+            exprBraceDepth--;
+            textContent += char;
+            pos++;
+            if (exprBraceDepth === 0) {
+              // End of ${...} expression - continue normal text parsing
+            }
+            continue;
+          }
+          // Regular char inside expression - just accumulate
+          textContent += char;
+          pos++;
+          continue;
+        }
+
+        // Normal text parsing
         if (char === '<') {
           flushText();
           if (nextChar === '!') {
@@ -462,15 +549,50 @@ function createEmptyElement(tagName: string, tagStart: number, tagNameEnd: numbe
 }
 
 /**
- * Find ${this.signal()} expressions in text content
+ * Find ${this.signal()} and ${whenElse(...)} expressions in text content
  */
 function findBindingsInText(text: string, textStart: number, parent: HtmlElement | null, bindings: BindingInfo[]): void {
   if (!parent) return;
 
+  // First, find whenElse expressions and track their positions to exclude from simple signal detection
+  const whenElsePositions: Array<{ start: number; end: number }> = [];
+
+  // Find ${whenElse(...)} expressions - need to handle nested html`` templates
+  const whenElseRegex = /\$\{whenElse\(/g;
+  let whenElseMatch: RegExpExecArray | null;
+
+  while ((whenElseMatch = whenElseRegex.exec(text)) !== null) {
+    const startPos = whenElseMatch.index;
+    // Parse the whenElse expression to find its end, handling nested templates
+    const parsed = parseWhenElseExpression(text, startPos);
+    if (parsed) {
+      whenElsePositions.push({ start: startPos, end: parsed.end });
+
+      bindings.push({
+        element: parent,
+        type: 'whenElse',
+        signalName: parsed.signals[0] || '',
+        signalNames: parsed.signals,
+        expressionStart: textStart + startPos,
+        expressionEnd: textStart + parsed.end,
+        fullExpression: text.substring(startPos, parsed.end),
+        jsExpression: parsed.condition,
+        thenTemplate: parsed.thenTemplate,
+        elseTemplate: parsed.elseTemplate,
+      });
+    }
+  }
+
+  // Find simple ${this.signal()} expressions, excluding those inside whenElse
   const exprRegex = /\$\{this\.(\w+)\(\)\}/g;
   let match: RegExpExecArray | null;
 
   while ((match = exprRegex.exec(text)) !== null) {
+    const pos = match.index;
+    // Skip if this position is inside a whenElse expression
+    const insideWhenElse = whenElsePositions.some((wp) => pos >= wp.start && pos < wp.end);
+    if (insideWhenElse) continue;
+
     bindings.push({
       element: parent,
       type: 'text',
@@ -480,6 +602,139 @@ function findBindingsInText(text: string, textStart: number, parent: HtmlElement
       fullExpression: match[0],
     });
   }
+}
+
+/**
+ * Parse a whenElse expression to extract condition and templates.
+ * Handles nested html`` templates by tracking backtick depth.
+ */
+function parseWhenElseExpression(
+  text: string,
+  startPos: number,
+): {
+  end: number;
+  condition: string;
+  thenTemplate: string;
+  elseTemplate: string;
+  signals: string[];
+} | null {
+  // Start after "${whenElse("
+  let pos = startPos + '${whenElse('.length;
+  let parenDepth = 1; // We're inside whenElse(
+
+  // Track the three arguments: condition, thenTemplate, elseTemplate
+  const args: string[] = [];
+  let currentArg = '';
+  let inBacktick = false;
+  let templateBraceDepth = 0; // Track ${...} inside template literals
+
+  while (pos < text.length) {
+    const char = text[pos];
+
+    // Handle backtick strings (html`...`)
+    if (char === '`' && !inBacktick) {
+      inBacktick = true;
+      templateBraceDepth = 0;
+      currentArg += char;
+      pos++;
+      continue;
+    }
+
+    if (char === '`' && inBacktick && templateBraceDepth === 0) {
+      // Closing backtick
+      inBacktick = false;
+      currentArg += char;
+      pos++;
+      continue;
+    }
+
+    // Handle ${...} inside backtick strings
+    if (inBacktick && char === '$' && text[pos + 1] === '{') {
+      templateBraceDepth++;
+      currentArg += '${';
+      pos += 2;
+      continue;
+    }
+
+    // Handle } inside template ${...}
+    if (inBacktick && char === '}' && templateBraceDepth > 0) {
+      templateBraceDepth--;
+      currentArg += char;
+      pos++;
+      continue;
+    }
+
+    if (inBacktick) {
+      currentArg += char;
+      pos++;
+      continue;
+    }
+
+    // Outside backticks - track parens
+    if (char === '(') {
+      parenDepth++;
+      currentArg += char;
+    } else if (char === ')') {
+      parenDepth--;
+      if (parenDepth === 0) {
+        // End of whenElse arguments
+        args.push(currentArg.trim());
+        pos++; // Move past )
+        // Should hit } next
+        if (text[pos] === '}') {
+          pos++;
+        }
+        break;
+      }
+      currentArg += char;
+    } else if (char === ',' && parenDepth === 1) {
+      // Argument separator at top level
+      args.push(currentArg.trim());
+      currentArg = '';
+    } else {
+      currentArg += char;
+    }
+
+    pos++;
+  }
+
+  if (args.length !== 3) {
+    return null; // Invalid whenElse - needs exactly 3 arguments
+  }
+
+  const condition = args[0];
+  const thenTemplate = extractHtmlTemplateContent(args[1]);
+  const elseTemplate = extractHtmlTemplateContent(args[2]);
+
+  // Extract signals from condition
+  const signalRegex = /this\.(\w+)\(\)/g;
+  const signals: string[] = [];
+  let signalMatch: RegExpExecArray | null;
+  while ((signalMatch = signalRegex.exec(condition)) !== null) {
+    if (!signals.includes(signalMatch[1])) {
+      signals.push(signalMatch[1]);
+    }
+  }
+
+  return {
+    end: pos,
+    condition,
+    thenTemplate,
+    elseTemplate,
+    signals,
+  };
+}
+
+/**
+ * Extract the HTML content from an html`...` template literal
+ */
+function extractHtmlTemplateContent(arg: string): string {
+  // Match html`...` and extract the content
+  const match = arg.match(/^html`([\s\S]*)`$/);
+  if (match) {
+    return match[1];
+  }
+  return arg; // Return as-is if not wrapped in html``
 }
 
 /**
@@ -518,7 +773,6 @@ function findBindingsInAttributes(element: HtmlElement, bindings: BindingInfo[])
   }
 
   for (const [name, attr] of element.attributes) {
-
     // Check for style bindings
     if (name === 'style') {
       const styleExprRegex = /([\w-]+)\s*:\s*(\$\{this\.(\w+)\(\)\})/g;

@@ -255,6 +255,34 @@ describe('Signal Binding Detection', () => {
     expect(result.bindings[0].signalName).toBe('isVisible');
   });
 
+  test('detects whenElse binding', () => {
+    const html = '<div>${whenElse(this.loading(), html`<span>Loading...</span>`, html`<span>Ready</span>`)}</div>';
+    const result = parseHtmlTemplate(html);
+    expect(result.bindings.length).toBe(1);
+    expect(result.bindings[0].type).toBe('whenElse');
+    expect(result.bindings[0].signalName).toBe('loading');
+    expect(result.bindings[0].thenTemplate).toBe('<span>Loading...</span>');
+    expect(result.bindings[0].elseTemplate).toBe('<span>Ready</span>');
+  });
+
+  test('detects whenElse with complex expression', () => {
+    const html = '<div>${whenElse(this.a() && this.b(), html`<span>Yes</span>`, html`<span>No</span>`)}</div>';
+    const result = parseHtmlTemplate(html);
+    expect(result.bindings.length).toBe(1);
+    expect(result.bindings[0].type).toBe('whenElse');
+    expect(result.bindings[0].signalNames).toContain('a');
+    expect(result.bindings[0].signalNames).toContain('b');
+    expect(result.bindings[0].jsExpression).toBe('this.a() && this.b()');
+  });
+
+  test('detects whenElse with nested expressions in templates', () => {
+    const html = '<div>${whenElse(this.show(), html`<span>${this.text()}</span>`, html`<span>Hidden</span>`)}</div>';
+    const result = parseHtmlTemplate(html);
+    expect(result.bindings.length).toBe(1);
+    expect(result.bindings[0].type).toBe('whenElse');
+    expect(result.bindings[0].thenTemplate).toBe('<span>${this.text()}</span>');
+  });
+
   test('detects multiple bindings in same element', () => {
     const result = parseHtmlTemplate('<div class="${this.className()}" style="color: ${this.color()}">${this.text()}</div>');
     expect(result.bindings.length).toBe(3);
@@ -736,5 +764,108 @@ describe('Stress Tests', () => {
 
     // 4 class attrs + 3 whens + 5 text + 4 styles = 16 bindings
     expect(result.bindings.length).toBe(16);
+  });
+});
+
+// ============================================================================
+// Nested whenElse and when Tests
+// ============================================================================
+
+describe('Nested Conditional Bindings', () => {
+  test('detects nested whenElse inside whenElse - parser finds all', () => {
+    const html = `<div>\${whenElse(
+      this.outer(),
+      html\`<div>\${whenElse(this.inner(), html\`<span>Inner True</span>\`, html\`<span>Inner False</span>\`)}</div>\`,
+      html\`<div>Outer False</div>\`
+    )}</div>`;
+    const result = parseHtmlTemplate(html);
+
+    // Parser finds ALL whenElse expressions including nested ones
+    // The compiler handles them recursively via processSubTemplateWithNesting
+    const whenElseBindings = result.bindings.filter((b) => b.type === 'whenElse');
+    expect(whenElseBindings.length).toBe(2);
+    expect(whenElseBindings[0].signalName).toBe('outer');
+    expect(whenElseBindings[1].signalName).toBe('inner');
+  });
+
+  test('detects when directive inside whenElse template', () => {
+    const html = `<div>\${whenElse(
+      this.loading(),
+      html\`<div "\${when(this.visible())}">Content</div>\`,
+      html\`<div>Not loading</div>\`
+    )}</div>`;
+    const result = parseHtmlTemplate(html);
+
+    const whenElseBindings = result.bindings.filter((b) => b.type === 'whenElse');
+    expect(whenElseBindings.length).toBe(1);
+    // The then template should contain the when directive
+    expect(whenElseBindings[0].thenTemplate).toContain('${when(this.visible())}');
+  });
+
+  test('detects signal bindings inside whenElse templates', () => {
+    const html = `<div>\${whenElse(
+      this.loading(),
+      html\`<span>\${this.loadingText()}</span>\`,
+      html\`<span>\${this.readyText()}</span>\`
+    )}</div>`;
+    const result = parseHtmlTemplate(html);
+
+    const whenElseBindings = result.bindings.filter((b) => b.type === 'whenElse');
+    expect(whenElseBindings.length).toBe(1);
+    expect(whenElseBindings[0].thenTemplate).toBe('<span>${this.loadingText()}</span>');
+    expect(whenElseBindings[0].elseTemplate).toBe('<span>${this.readyText()}</span>');
+  });
+
+  test('handles multiple whenElse at same level', () => {
+    const html = `<div>
+      \${whenElse(this.a(), html\`<span>A</span>\`, html\`<span>not A</span>\`)}
+      \${whenElse(this.b(), html\`<span>B</span>\`, html\`<span>not B</span>\`)}
+    </div>`;
+    const result = parseHtmlTemplate(html);
+
+    const whenElseBindings = result.bindings.filter((b) => b.type === 'whenElse');
+    expect(whenElseBindings.length).toBe(2);
+    expect(whenElseBindings[0].signalName).toBe('a');
+    expect(whenElseBindings[1].signalName).toBe('b');
+  });
+
+  test('handles deeply nested conditionals - parser finds all', () => {
+    const html = `<div>\${whenElse(
+      this.level1(),
+      html\`<div>
+        \${whenElse(
+          this.level2(),
+          html\`<span>
+            \${whenElse(this.level3(), html\`<b>Deep</b>\`, html\`<b>Not deep</b>\`)}
+          </span>\`,
+          html\`<span>L2 false</span>\`
+        )}
+      </div>\`,
+      html\`<div>L1 false</div>\`
+    )}</div>`;
+    const result = parseHtmlTemplate(html);
+
+    // Parser finds all 3 whenElse expressions at all nesting levels
+    // The compiler's processSubTemplateWithNesting handles the recursion
+    const whenElseBindings = result.bindings.filter((b) => b.type === 'whenElse');
+    expect(whenElseBindings.length).toBe(3);
+    expect(whenElseBindings[0].signalName).toBe('level1');
+    expect(whenElseBindings[1].signalName).toBe('level2');
+    expect(whenElseBindings[2].signalName).toBe('level3');
+  });
+
+  test('preserves nested whenElse template content correctly', () => {
+    const html = `<div>\${whenElse(
+      this.outer(),
+      html\`<div>\${whenElse(this.inner(), html\`<span>A</span>\`, html\`<span>B</span>\`)}</div>\`,
+      html\`<div>C</div>\`
+    )}</div>`;
+    const result = parseHtmlTemplate(html);
+
+    const outerWhenElse = result.bindings.find((b) => b.type === 'whenElse' && b.signalName === 'outer');
+    expect(outerWhenElse).toBeDefined();
+    // The then template should contain the nested whenElse expression
+    expect(outerWhenElse!.thenTemplate).toContain('${whenElse(this.inner()');
+    expect(outerWhenElse!.elseTemplate).toBe('<div>C</div>');
   });
 });
