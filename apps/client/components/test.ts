@@ -12,6 +12,7 @@ export const MyElementComponent = registerComponent<MyElementProps>(
     private _loading = signal(true);
     private _countries = signal(['USA', 'Canada', 'Mexico', 'Germany', 'France', 'Italy', 'Spain', 'Japan', 'China', 'India']);
     private _clickCount = signal(0);
+    private _class = signal('click-section');
 
     render = () => {
       setTimeout(() => {
@@ -40,10 +41,11 @@ export const MyElementComponent = registerComponent<MyElementProps>(
         const arr = [...this._countries()];
         [arr[0], arr[1]] = [arr[1], arr[0]];
         this._countries(arr);
+        this._class('click-section updated');
       }, 2500);
 
       return html`
-        <div class="click-section">
+        <div class="${this._class()}">
           <p>Click count: ${this._clickCount()}</p>
           <button @click=${this._handleClick}>Option 1: Method Reference</button>
           <button @click=${(e: Event) => this._handleClickWithEvent(e)}>Option 2: Arrow Function</button>
@@ -103,6 +105,10 @@ export const MyElementComponent = registerComponent<MyElementProps>(
         padding: 10px;
         border: 1px solid #ccc;
         border-radius: 5px;
+      }
+      
+      .click-section.updated {
+        background-color: lightgreen;
       }
 
       .click-section button {
