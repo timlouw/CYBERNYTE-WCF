@@ -339,10 +339,10 @@ const startServer = (port: number = serverPort): void => {
 
   const url = `http://localhost:${port}/`;
   server.listen(port, () => {
-    console.info(consoleColors.yellow, `Server running at ${url}`);
     if (!isProd) {
       console.info(consoleColors.cyan, 'Live reload enabled');
     }
+    console.info(consoleColors.yellow, `Server running at ${url}`);
     console.info('');
     console.info('');
     serverStarted = true;

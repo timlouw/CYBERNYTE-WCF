@@ -9,8 +9,10 @@ export const MyElementComponent = registerComponent<MyElementProps>(
   { selector: 'my-element', type: 'component' },
   class extends Component {
     private _color = signal(this.getAttribute('color'));
-    private _loading = signal(true);
+    private _loading = signal(false);
+    private _loading2 = signal(true);
     private _countries = signal(['USA', 'Canada', 'Mexico', 'Germany', 'France', 'Italy', 'Spain', 'Japan', 'China', 'India']);
+    private _cities = signal(['New York', 'Toronto', 'Mexico City']);
     private _clickCount = signal(0);
     private _class = signal('click-section');
 
@@ -47,13 +49,15 @@ export const MyElementComponent = registerComponent<MyElementProps>(
       return html`
         <div class="${this._class()}">
           <p>Click count: ${this._clickCount()}</p>
-          <button @click=${this._handleClick}>Option 1: Method Reference</button>
-          <button @click=${(e: Event) => this._handleClickWithEvent(e)}>Option 2: Arrow Function</button>
-          <button @click.stop=${this._handleClick}>Option 3: With .stop modifier</button>
+          <button @click=${this._handleClick}>Option 1</button>
+          <button @click=${(e: Event) => this._handleClickWithEvent(e)}>Option 2</button>
+          <button @click.stop=${this._handleClick}>Option 3</button>
         </div>
         <div class="box" style="background-color: ${this._color()}"></div>
         <div class="box" style="background-color: ${this._color()}"></div>
-        <div "${when(this._loading())}" class="box" style="background-color: ${this._color()}"></div>
+        <div "${when(this._loading())}" class="box" style="background-color: ${this._color()}">
+          <div "${when(!this._loading2())}">loading 2</div>
+        </div>
         <div "${when(this._loading())}" class="box" style="background-color: ${this._color()}"></div>
         <div class="status">
           ${whenElse(this._loading(), html`<div>Loading...</div>`, html`<div>Ready!</div>`)}
@@ -61,9 +65,12 @@ export const MyElementComponent = registerComponent<MyElementProps>(
         ${repeat(
           this._countries(),
           (country) => html`
-            <div class="box2">${country}</div>
+            <div class="${this._class()}">${country}</div>
             ${country} ${country}
             <div class="box2">${country}</div>
+            ${repeat(this._cities(), (city) => html`
+              <div "${when(this._loading())}">${city} inner loading</div>
+            `)}
           `,
         )}
       `;
@@ -82,6 +89,7 @@ export const MyElementComponent = registerComponent<MyElementProps>(
     private _update = () => {
       this._color(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
       this._loading(!this._loading());
+      this._loading2(!this._loading2());
     };
 
     static styles = css`
@@ -98,14 +106,12 @@ export const MyElementComponent = registerComponent<MyElementProps>(
         border-radius: 5px;
         border: 2px solid green;
       }
-
+      
       .click-section {
-        margin: 20px 0;
-        padding: 10px;
         border: 1px solid #ccc;
         border-radius: 5px;
       }
-      
+
       .click-section.updated {
         background-color: lightgreen;
       }

@@ -59,6 +59,7 @@ export const BIND_FN = {
   IF: '__bindIf',
   IF_EXPR: '__bindIfExpr',
   REPEAT: '__bindRepeat',
+  NESTED_REPEAT: '__bindNestedRepeat',
   EVENTS: '__setupEventDelegation',
 } as const;
 

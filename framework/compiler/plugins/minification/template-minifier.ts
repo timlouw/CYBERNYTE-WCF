@@ -20,14 +20,26 @@
 /**
  * Minify HTML content.
  * Safe for template literals with ${expressions}.
+ * 
+ * IMPORTANT: We preserve a single space between tags (><) because
+ * inline elements like <span>A</span> <span>B</span> need the space
+ * to render correctly. Removing it would cause "A" and "B" to touch.
  */
 export const minifyHTML = (html: string): string => {
   return (
     html
       // Collapse all whitespace sequences (including newlines) to single space
       .replace(/\s+/g, ' ')
-      // Remove space between > and <
-      .replace(/>\s+</g, '><')
+      // Collapse multiple spaces between > and < to a single space (preserve one space for inline elements)
+      // This keeps "</span> <span>" as "</span> <span>" instead of "</span><span>"
+      .replace(/>\s+</g, '> <')
+      // Remove space between > and < ONLY for block-level elements where it's safe
+      // Block elements: div, p, section, article, header, footer, main, nav, aside, ul, ol, li, table, tr, td, th, thead, tbody, form, fieldset, h1-h6
+      .replace(/(<\/(?:div|p|section|article|header|footer|main|nav|aside|ul|ol|li|table|tr|td|th|thead|tbody|tfoot|form|fieldset|h[1-6]|template)>) (<(?:div|p|section|article|header|footer|main|nav|aside|ul|ol|li|table|tr|td|th|thead|tbody|tfoot|form|fieldset|h[1-6]|template|!))/gi, '$1$2')
+      // Remove space after opening block tags
+      .replace(/(<(?:div|p|section|article|header|footer|main|nav|aside|ul|ol|li|table|tr|td|th|thead|tbody|tfoot|form|fieldset|h[1-6])[^>]*>) /gi, '$1')
+      // Remove space before closing block tags
+      .replace(/ (<\/(?:div|p|section|article|header|footer|main|nav|aside|ul|ol|li|table|tr|td|th|thead|tbody|tfoot|form|fieldset|h[1-6])>)/gi, '$1')
       // Remove leading whitespace before first tag
       .replace(/^\s+</g, '<')
       // Remove trailing whitespace after last tag

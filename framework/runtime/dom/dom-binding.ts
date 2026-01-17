@@ -1,4 +1,4 @@
-import { Signal } from '../signal/index.js';
+import { Signal, signal as createSignal } from '../signal/index.js';
 
 // ============================================================================
 // Event Delegation System
@@ -118,92 +118,6 @@ export const __setupEventDelegation = (root: ShadowRoot, eventMap: Record<string
 const tempEl = document.createElement('template');
 
 /**
- * Generate a unique key for an item based on its content.
- *
- * Key Generation Strategy (in priority order):
- * 1. Objects with `id`, `key`, or `_id` properties → use that value
- * 2. Primitives (string, number, boolean) → use the value itself
- * 3. Objects without identifiers → uses index as fallback (not stable for reordering)
- *
- * Note: Duplicate keys are handled by the caller by appending index suffixes.
- * For best performance with object arrays, ensure objects have an `id` or `key` property.
- */
-const generateItemKey = (item: any, index: number): string => {
-  if (item === null || item === undefined) {
-    return `__null_${index}`;
-  }
-
-  // Primitives use their value as the key
-  // Note: Duplicates like ['a', 'a'] are handled by the dedup logic in render()
-  if (typeof item !== 'object') {
-    return `__p_${String(item)}`;
-  }
-
-  // Objects: try common id patterns first (STABLE - recommended)
-  if ('id' in item && item.id != null) return `__id_${item.id}`;
-  if ('key' in item && item.key != null) return `__key_${item.key}`;
-  if ('_id' in item && item._id != null) return `__id_${item._id}`;
-
-  // Fallback: use index (NOT stable for reordering, but won't break on object mutation)
-  return `__idx_${index}`;
-};
-
-/**
- * Compute the Longest Increasing Subsequence (LIS) of indices.
- * Returns the indices of elements that form the LIS.
- * Used to minimize DOM moves during list reconciliation.
- */
-const computeLIS = (arr: number[]): number[] => {
-  const n = arr.length;
-  if (n === 0) return [];
-
-  // dp[i] stores the smallest tail element for LIS of length i+1
-  const dp: number[] = [];
-  // parent[i] stores the index of previous element in LIS ending at i
-  const parent: number[] = new Array(n).fill(-1);
-  // indices[i] stores the index in arr of the tail element for LIS of length i+1
-  const indices: number[] = [];
-
-  for (let i = 0; i < n; i++) {
-    const val = arr[i];
-
-    // Binary search for the position to insert/replace
-    let lo = 0;
-    let hi = dp.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (dp[mid] < val) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
-
-    // Update dp and indices
-    if (lo === dp.length) {
-      dp.push(val);
-      indices.push(i);
-    } else {
-      dp[lo] = val;
-      indices[lo] = i;
-    }
-
-    // Set parent
-    parent[i] = lo > 0 ? indices[lo - 1] : -1;
-  }
-
-  // Reconstruct the LIS indices
-  const lis: number[] = [];
-  let k = indices[indices.length - 1];
-  while (k >= 0) {
-    lis.push(k);
-    k = parent[k];
-  }
-  lis.reverse();
-  return lis;
-};
-
-/**
  * Core conditional binding logic shared by __bindIf and __bindIfExpr
  */
 const bindConditional = (
@@ -300,260 +214,334 @@ export const __bindIf = (root: ShadowRoot, signal: Signal<any>, id: string, temp
 export const __bindIfExpr = (root: ShadowRoot, signals: Signal<any>[], evalExpr: () => boolean, id: string, template: string, initNested: () => (() => void)[]): (() => void) =>
   bindConditional(root, id, template, initNested, (update) => signals.map((s) => s.subscribe(update, true)), evalExpr);
 
+// ============================================================================
+// Fine-Grained Repeat Binding (Signal-per-Item)
+// ============================================================================
+
 /**
- * Internal state for a rendered list item (supports multiple nodes including text)
+ * Managed item state for fine-grained repeat
  */
-interface RenderedItem<T> {
-  key: string;
-  nodes: ChildNode[]; // Support multiple nodes including text nodes
+interface ManagedItem<T> {
+  id: number;
+  itemSignal: Signal<T>;
+  nodes: ChildNode[];
   cleanups: (() => void)[];
-  item: T; // Store the item for potential updates
-  index: number; // Track current index
-}
-
-/** Options for __bindRepeat */
-export interface RepeatOptions<T> {
-  /** Custom key extraction function */
-  trackBy?: (item: T, index: number) => string | number;
 }
 
 /**
- * Bind a repeating list to a signal.
- * Uses automatic keying (or custom trackBy) for efficient diffing with LIS optimization.
- *
- * @param root - The shadow root to render into
- * @param signal - The signal containing the array of items
- * @param anchorId - The ID of the anchor element (template placeholder)
- * @param templateFn - Function that generates HTML for each item
- * @param initItemBindings - Function that initializes bindings for each item element
- * @param emptyTemplate - Optional template to show when the list is empty
- * @param options - Optional configuration (trackBy function)
+ * Fine-grained repeat binding that wraps each item in its own signal.
+ * 
+ * ## How it works:
+ * - Each array item gets wrapped in an individual signal
+ * - Template bindings subscribe to the item signal, not the array signal
+ * - When item data changes, only that item's signal fires → O(1) DOM update
+ * - No diffing algorithm needed for content changes
+ * 
+ * ## Performance characteristics:
+ * - Create 1000 rows: Slightly slower (creates 1000 signals)
+ * - Partial update: O(1) per item (just signal updates)
+ * - Swap rows: O(1) DOM moves + signal reassignment
+ * - Remove row: O(1)
+ * - Append row: O(1)
+ * 
+ * @param root - Shadow root to render into
+ * @param arraySignal - Signal containing the array
+ * @param anchorId - ID of the template anchor element
+ * @param templateFn - Function that generates HTML for each item (receives item signal)
+ * @param initItemBindings - Function that sets up bindings for each item (receives item signal)
+ * @param emptyTemplate - Optional template to show when array is empty
+ * @param itemEventHandlers - Optional event handlers map for events inside repeat items
  */
 export const __bindRepeat = <T>(
   root: ShadowRoot,
-  signal: Signal<T[]>,
+  arraySignal: Signal<T[]>,
   anchorId: string,
-  templateFn: (item: T, index: number) => string,
-  initItemBindings: (elements: Element[], item: T, index: number) => (() => void)[],
+  templateFn: (itemSignal: Signal<T>, index: number) => string,
+  initItemBindings: (elements: Element[], itemSignal: Signal<T>, index: number) => (() => void)[],
   emptyTemplate?: string,
-  options?: RepeatOptions<T>,
+  itemEventHandlers?: Record<string, Record<string, (itemSignal: Signal<T>, index: number, e: Event) => void>>,
 ): (() => void) => {
-  // Map of key -> rendered item state
-  const renderedItems = new Map<string, RenderedItem<T>>();
-  // Ordered list of keys for position tracking
-  let currentOrder: string[] = [];
-
-  // Custom trackBy or default key generation
-  const getKey = options?.trackBy ? (item: T, index: number) => `__tb_${options.trackBy!(item, index)}` : generateItemKey;
-
-  // Get the anchor element - this is where we'll insert items before
+  // Managed items by stable ID
+  const managedItems: ManagedItem<T>[] = [];
+  let nextId = 0;
+  
+  // Get anchor and container
   const anchor = root.getElementById(anchorId);
-  if (!anchor) {
-    console.warn(`[__bindRepeat] Anchor element with id "${anchorId}" not found`);
-    return () => {};
-  }
-
-  // Get the parent container for insertions
-  // Use parentNode instead of parentElement since the parent might be a ShadowRoot (DocumentFragment)
+  if (!anchor) return () => {};
+  
   const container = anchor.parentNode as ParentNode;
-  if (!container) {
-    console.warn(`[__bindRepeat] Anchor element has no parent`);
-    return () => {};
-  }
-
-  // Empty state element (if emptyTemplate provided)
+  if (!container) return () => {};
+  
+  // Empty state
   let emptyElement: Element | null = null;
   let emptyShowing = false;
-
+  
   const showEmpty = () => {
     if (emptyShowing || !emptyTemplate) return;
     emptyShowing = true;
     tempEl.innerHTML = emptyTemplate;
-    const fragment = tempEl.content.cloneNode(true) as DocumentFragment;
-    emptyElement = fragment.firstElementChild;
-    if (emptyElement) {
-      container.insertBefore(emptyElement, anchor);
-    }
+    emptyElement = (tempEl.content.cloneNode(true) as DocumentFragment).firstElementChild;
+    if (emptyElement) container.insertBefore(emptyElement, anchor);
   };
-
+  
   const hideEmpty = () => {
     if (!emptyShowing || !emptyElement) return;
     emptyShowing = false;
     emptyElement.remove();
     emptyElement = null;
   };
-
+  
   /**
-   * Create a new item and insert it into the DOM
+   * Create a new managed item with its own signal
    */
-  const createItem = (item: T, index: number, key: string, refNode: Node): ChildNode | null => {
-    const html = templateFn(item, index);
-    console.log(`[repeat] Item ${index} HTML:`, html);
+  const createItem = (item: T, index: number, refNode: Node): ManagedItem<T> => {
+    const id = nextId++;
+    const itemSignal = createSignal(item);
+    
+    // Generate HTML with initial value
+    const html = templateFn(itemSignal, index);
     tempEl.innerHTML = html;
     const fragment = tempEl.content.cloneNode(true) as DocumentFragment;
-    // Use childNodes to include text nodes, not just elements
     const nodes: ChildNode[] = Array.from(fragment.childNodes);
-    console.log(
-      `[repeat] Item ${index} nodes:`,
-      nodes.length,
-      nodes.map((n) => (n.nodeType === 1 ? (n as Element).outerHTML : `TEXT:"${n.textContent}"`)),
-    );
-
-    if (nodes.length === 0) return null;
-
-    // Insert all nodes before reference node (in forward order)
-    // Each insertBefore adds the node immediately before refNode,
-    // so inserting in forward order maintains correct sequence
-    for (let j = 0; j < nodes.length; j++) {
-      container.insertBefore(nodes[j], refNode);
+    
+    // Insert into DOM
+    for (const node of nodes) {
+      container.insertBefore(node, refNode);
     }
-
-    // Initialize bindings for this item (pass only element nodes)
+    
+    // Initialize bindings (these subscribe to itemSignal)
     const elements = nodes.filter((n): n is Element => n.nodeType === Node.ELEMENT_NODE);
-    const cleanups = initItemBindings(elements, item, index);
-
-    renderedItems.set(key, {
-      key,
-      nodes,
-      cleanups,
-      item,
-      index,
-    });
-
-    return nodes[0];
-  };
-
-  /**
-   * Remove an item from the DOM and cleanup
-   */
-  const removeItem = (key: string) => {
-    const rendered = renderedItems.get(key);
-    if (!rendered) return;
-
-    for (const cleanup of rendered.cleanups) {
-      cleanup();
-    }
-    for (const node of rendered.nodes) {
-      node.remove();
-    }
-    renderedItems.delete(key);
-  };
-
-  const render = (items: T[]) => {
-    // Handle empty arrays - remove all items and show empty state
-    if (!items || items.length === 0) {
-      for (const key of currentOrder) {
-        removeItem(key);
+    const cleanups = initItemBindings(elements, itemSignal, index);
+    
+    // Set up event handlers for this item (if any)
+    if (itemEventHandlers) {
+      for (const eventType in itemEventHandlers) {
+        const handlers = itemEventHandlers[eventType];
+        for (const el of elements) {
+          // Find all elements with data-evt-{eventType} attribute
+          const nested = el.querySelectorAll(`[data-evt-${eventType}]`);
+          const targets: Element[] = [];
+          if (el.hasAttribute(`data-evt-${eventType}`)) targets.push(el);
+          for (let i = 0; i < nested.length; i++) targets.push(nested[i]);
+          
+          for (const target of targets) {
+            const handlerId = target.getAttribute(`data-evt-${eventType}`)?.split(':')[0];
+            if (handlerId && handlers[handlerId]) {
+              const handler = handlers[handlerId];
+              const listener = (e: Event) => handler(itemSignal, index, e);
+              target.addEventListener(eventType, listener);
+              cleanups.push(() => target.removeEventListener(eventType, listener));
+            }
+          }
+        }
       }
-      currentOrder = [];
+    }
+    
+    return { id, itemSignal, nodes, cleanups };
+  };
+  
+  /**
+   * Remove a managed item and cleanup
+   */
+  const removeItem = (managed: ManagedItem<T>) => {
+    for (const cleanup of managed.cleanups) cleanup();
+    for (const node of managed.nodes) node.remove();
+  };
+  
+  /**
+   * Reconcile array changes - simple position-based approach
+   */
+  const reconcile = (newItems: T[]) => {
+    const newLength = newItems?.length ?? 0;
+    const oldLength = managedItems.length;
+    
+    // Handle empty state
+    if (newLength === 0) {
+      for (const managed of managedItems) removeItem(managed);
+      managedItems.length = 0;
       showEmpty();
       return;
     }
-
-    // Hide empty state if showing
     hideEmpty();
-
-    // Generate keys for all new items
-    const newKeys: string[] = [];
-    const newKeySet = new Set<string>();
-
-    for (let i = 0; i < items.length; i++) {
-      let key = getKey(items[i], i);
-      // Handle duplicate keys by appending index
-      while (newKeySet.has(key)) {
-        key = `${key}_dup${i}`;
-      }
-      newKeys.push(key);
-      newKeySet.add(key);
-    }
-
-    // Build map from old key to old index for LIS calculation
-    const oldKeyToIndex = new Map<string, number>();
-    for (let i = 0; i < currentOrder.length; i++) {
-      oldKeyToIndex.set(currentOrder[i], i);
-    }
-
-    // Remove items that are no longer present
-    for (const key of currentOrder) {
-      if (!newKeySet.has(key)) {
-        removeItem(key);
+    
+    // Update existing items (just update their signals - DOM auto-updates)
+    const minLength = Math.min(oldLength, newLength);
+    for (let i = 0; i < minLength; i++) {
+      const managed = managedItems[i];
+      // Only update signal if value actually changed
+      if (managed.itemSignal() !== newItems[i]) {
+        managed.itemSignal(newItems[i]);
       }
     }
-
-    // Calculate which existing items are in the longest increasing subsequence
-    // These items don't need to be moved - we only move items NOT in the LIS
-    const existingIndices: number[] = [];
-    const existingKeys: string[] = [];
-    for (let i = 0; i < newKeys.length; i++) {
-      const key = newKeys[i];
-      if (oldKeyToIndex.has(key)) {
-        existingIndices.push(oldKeyToIndex.get(key)!);
-        existingKeys.push(key);
+    
+    // Remove excess items from the end
+    if (newLength < oldLength) {
+      for (let i = newLength; i < oldLength; i++) {
+        removeItem(managedItems[i]);
+      }
+      managedItems.length = newLength;
+    }
+    
+    // Add new items at the end
+    if (newLength > oldLength) {
+      for (let i = oldLength; i < newLength; i++) {
+        const managed = createItem(newItems[i], i, anchor);
+        managedItems.push(managed);
       }
     }
-
-    // Get the indices in existingIndices that form the LIS
-    const lisIndices = new Set(computeLIS(existingIndices));
-    // Map the LIS indices back to keys that shouldn't move
-    const stableKeys = new Set<string>();
-    for (let i = 0; i < existingKeys.length; i++) {
-      if (lisIndices.has(i)) {
-        stableKeys.add(existingKeys[i]);
-      }
-    }
-
-    // Process in reverse order for insertBefore
-    let refNode: Node = anchor;
-
-    for (let i = items.length - 1; i >= 0; i--) {
-      const key = newKeys[i];
-      const item = items[i];
-      const existing = renderedItems.get(key);
-
-      if (existing) {
-        // Update stored index and item
-        existing.index = i;
-        existing.item = item;
-
-        const firstNode = existing.nodes[0];
-
-        // Only move if NOT in the stable set (LIS)
-        if (!stableKeys.has(key)) {
-          // Move all nodes (fragments) to correct position
-          for (const node of existing.nodes) {
-            container.insertBefore(node, refNode);
-          }
-        }
-
-        refNode = firstNode || refNode;
-      } else {
-        // Create new item
-        const firstEl = createItem(item, i, key, refNode);
-        if (firstEl) {
-          refNode = firstEl;
-        }
-      }
-    }
-
-    // Update current order
-    currentOrder = newKeys;
   };
-
+  
   // Initial render
-  render(signal());
-
-  // Subscribe to changes
-  const unsubscribe = signal.subscribe((items) => {
-    render(items);
-  }, true); // Skip initial since we already rendered
-
-  // Cleanup function
+  reconcile(arraySignal());
+  
+  // Subscribe to array changes
+  const unsubscribe = arraySignal.subscribe((items) => {
+    reconcile(items);
+  }, true);
+  
+  // Cleanup
   return () => {
     unsubscribe();
     hideEmpty();
-    for (const key of currentOrder) {
-      removeItem(key);
+    for (const managed of managedItems) removeItem(managed);
+    managedItems.length = 0;
+  };
+};
+
+// ============================================================================
+// Nested Repeat Binding (for repeats inside repeats)
+// ============================================================================
+
+/**
+ * Nested repeat binding that works within a parent repeat's item elements.
+ * Similar to __bindRepeat but searches for elements within a provided element array
+ * rather than a shadow root.
+ * 
+ * @param elements - Array of elements to search within (from parent repeat item)
+ * @param arraySignal - Signal containing the array
+ * @param anchorId - ID of the template anchor element
+ * @param templateFn - Function that generates HTML for each item
+ * @param initItemBindings - Function that sets up bindings for each item
+ * @param emptyTemplate - Optional template to show when array is empty
+ */
+export const __bindNestedRepeat = <T>(
+  elements: Element[],
+  arraySignal: Signal<T[]>,
+  anchorId: string,
+  templateFn: (itemSignal: Signal<T>, index: number) => string,
+  initItemBindings: (elements: Element[], itemSignal: Signal<T>, index: number) => (() => void)[],
+  emptyTemplate?: string,
+): (() => void) => {
+  // Find anchor element within the provided elements
+  const findById = (id: string): Element | null => {
+    for (const el of elements) {
+      if (el.id === id || el.getAttribute?.('data-bind-id') === id) return el;
+      const found = el.querySelector?.(`#${id}, [data-bind-id="${id}"]`);
+      if (found) return found;
     }
-    currentOrder = [];
+    return null;
+  };
+  
+  const anchor = findById(anchorId);
+  if (!anchor) return () => {};
+  
+  const container = anchor.parentNode as ParentNode;
+  if (!container) return () => {};
+  
+  // Managed items
+  const managedItems: ManagedItem<T>[] = [];
+  let nextId = 0;
+  
+  // Empty state
+  let emptyElement: Element | null = null;
+  let emptyShowing = false;
+  
+  const showEmpty = () => {
+    if (emptyShowing || !emptyTemplate) return;
+    emptyShowing = true;
+    tempEl.innerHTML = emptyTemplate;
+    emptyElement = (tempEl.content.cloneNode(true) as DocumentFragment).firstElementChild;
+    if (emptyElement) container.insertBefore(emptyElement, anchor);
+  };
+  
+  const hideEmpty = () => {
+    if (!emptyShowing || !emptyElement) return;
+    emptyShowing = false;
+    emptyElement.remove();
+    emptyElement = null;
+  };
+  
+  const createItem = (item: T, index: number, refNode: Node): ManagedItem<T> => {
+    const id = nextId++;
+    const itemSignal = createSignal(item);
+    
+    const html = templateFn(itemSignal, index);
+    tempEl.innerHTML = html;
+    const fragment = tempEl.content.cloneNode(true) as DocumentFragment;
+    const nodes: ChildNode[] = Array.from(fragment.childNodes);
+    
+    for (const node of nodes) {
+      container.insertBefore(node, refNode);
+    }
+    
+    const itemElements = nodes.filter((n): n is Element => n.nodeType === Node.ELEMENT_NODE);
+    const cleanups = initItemBindings(itemElements, itemSignal, index);
+    
+    return { id, itemSignal, nodes, cleanups };
+  };
+  
+  const removeItem = (managed: ManagedItem<T>) => {
+    for (const cleanup of managed.cleanups) cleanup();
+    for (const node of managed.nodes) node.remove();
+  };
+  
+  const reconcile = (newItems: T[]) => {
+    const newLength = newItems?.length ?? 0;
+    const oldLength = managedItems.length;
+    
+    if (newLength === 0) {
+      for (const managed of managedItems) removeItem(managed);
+      managedItems.length = 0;
+      showEmpty();
+      return;
+    }
+    hideEmpty();
+    
+    const minLength = Math.min(oldLength, newLength);
+    for (let i = 0; i < minLength; i++) {
+      const managed = managedItems[i];
+      if (managed.itemSignal() !== newItems[i]) {
+        managed.itemSignal(newItems[i]);
+      }
+    }
+    
+    if (newLength < oldLength) {
+      for (let i = newLength; i < oldLength; i++) {
+        removeItem(managedItems[i]);
+      }
+      managedItems.length = newLength;
+    }
+    
+    if (newLength > oldLength) {
+      for (let i = oldLength; i < newLength; i++) {
+        const managed = createItem(newItems[i], i, anchor);
+        managedItems.push(managed);
+      }
+    }
+  };
+  
+  // Initial render
+  reconcile(arraySignal());
+  
+  // Subscribe to array changes
+  const unsubscribe = arraySignal.subscribe((items) => {
+    reconcile(items);
+  }, true);
+  
+  return () => {
+    unsubscribe();
+    hideEmpty();
+    for (const managed of managedItems) removeItem(managed);
+    managedItems.length = 0;
   };
 };
