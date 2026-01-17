@@ -15,10 +15,16 @@
  * ```typescript
  * import { mount } from '@framework/compiler/bootstrap';
  * import { AppComponent } from './pages/landing.js';
+ * import globalStyles from './assets/global.css';
  *
- * mount(AppComponent, document.body);
+ * mount(AppComponent, {
+ *   target: document.body,
+ *   styles: [globalStyles]
+ * });
  * ```
  */
+
+import { registerGlobalStyles } from '../runtime/dom/index.js';
 
 /**
  * A registered page component returned by `registerComponent({ type: 'page' }, ...)`.
@@ -27,32 +33,50 @@
 type PageComponent = `<${string}></${string}>`;
 
 /**
+ * Mount configuration options
+ */
+interface MountOptions {
+  /** The DOM element to mount the component into (defaults to document.body) */
+  target?: Element | null;
+  /** Global CSS styles to apply to all Shadow DOM components */
+  styles?: string[];
+}
+
+/**
  * Declares the root component to bootstrap into the application.
  *
- * This function is a compile-time directive only - it gets completely
- * stripped from the final bundle. The compiler uses this call to:
- * 1. Identify the root component from the imported variable
- * 2. Resolve the component's selector from its definition
- * 3. Inject the component's HTML into index.html at build time
+ * This function handles both compile-time and runtime concerns:
+ * - Compile-time: The compiler extracts the component to inject into index.html
+ * - Runtime: Registers global styles and creates the root element
  *
  * @param component - The page component returned by `registerComponent({ type: 'page' }, ...)`
- * @param _target - The mount target (compile-time only, defaults to document.body)
+ * @param options - Mount configuration (target element and global styles)
  *
  * @example
  * ```typescript
  * import { mount } from '@framework/compiler/bootstrap';
  * import { AppComponent } from './pages/landing.js';
+ * import globalStyles from './assets/global.css';
+ * import themeStyles from './assets/theme.css';
  *
- * // Bootstrap using the imported component
- * mount(AppComponent, document.body);
+ * mount(AppComponent, {
+ *   styles: [globalStyles, themeStyles]
+ * });
  * ```
  */
-export function mount(component: PageComponent, target: Element | null = document.body): void {
+export function mount(component: PageComponent, options: MountOptions = {}): void {
+  const { target = document.body, styles = [] } = options;
+
+  // Register global styles FIRST (before any components initialize)
+  if (styles.length > 0) {
+    registerGlobalStyles(...styles);
+  }
+
   // Extract tag name from the component string (e.g., "<my-app></my-app>" -> "my-app")
   const match = component.match(/^<([a-z][a-z0-9-]*)>/i);
   if (!match || !target) return;
 
-  // Dynamically create and append the element - avoids CLS by not pre-rendering in HTML
+  // Dynamically create and append the element
   const element = document.createElement(match[1]);
   target.appendChild(element);
 }

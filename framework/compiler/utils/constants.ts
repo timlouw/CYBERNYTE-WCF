@@ -45,6 +45,7 @@ export const PLUGIN_NAME = {
   COMPONENT: 'component-ctfe',
   REACTIVE: 'reactive-binding',
   STRIPPER: 'stripper',
+  GLOBAL_CSS_BUNDLER: 'global-css-bundler',
   POST_BUILD: 'post-build',
 } as const;
 

@@ -156,6 +156,10 @@ const parseMountTarget = (targetNode: ts.Node, sourceFile: ts.SourceFile): Mount
 
 /**
  * Finds the mount() call in the source file and extracts component name and target.
+ * Supports both signatures:
+ * - mount(Component, target) - legacy
+ * - mount(Component, { target?, styles? }) - new options object
+ * - mount(Component) - defaults to document.body
  */
 const findMountCall = (
   sourceFile: ts.SourceFile,
@@ -170,18 +174,41 @@ const findMountCall = (
 
     if (ts.isCallExpression(node)) {
       const expr = node.expression;
-      if (ts.isIdentifier(expr) && expr.text === 'mount' && node.arguments.length >= 2) {
+      if (ts.isIdentifier(expr) && expr.text === 'mount' && node.arguments.length >= 1) {
         const componentArg = node.arguments[0];
-        const targetArg = node.arguments[1];
 
         if (ts.isIdentifier(componentArg)) {
-          const target = parseMountTarget(targetArg, sourceFile);
-          if (target) {
-            result = {
-              componentName: componentArg.text,
-              target,
-            };
+          // Default to body if no second argument
+          let target: MountTarget = { type: 'body' };
+
+          if (node.arguments.length >= 2) {
+            const secondArg = node.arguments[1];
+
+            // Check if it's an options object: { target?, styles? }
+            if (ts.isObjectLiteralExpression(secondArg)) {
+              // New signature: mount(Component, { target?, styles? })
+              for (const prop of secondArg.properties) {
+                if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'target') {
+                  const parsedTarget = parseMountTarget(prop.initializer, sourceFile);
+                  if (parsedTarget) {
+                    target = parsedTarget;
+                  }
+                }
+              }
+              // If no target in options, defaults to body
+            } else {
+              // Legacy signature: mount(Component, target)
+              const parsedTarget = parseMountTarget(secondArg, sourceFile);
+              if (parsedTarget) {
+                target = parsedTarget;
+              }
+            }
           }
+
+          result = {
+            componentName: componentArg.text,
+            target,
+          };
         }
       }
     }

@@ -95,7 +95,6 @@ export const MyElementComponent = registerComponent<MyElementProps>(
       .box2 {
         width: 100%;
         height: 20px;
-        background-color: white;
         border-radius: 5px;
         border: 2px solid green;
       }

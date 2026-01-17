@@ -12,6 +12,14 @@
  * To use a router instead, simply change the entry point in config.ts
  * or add the router as an additional entry point.
  */
+
+// Import global styles (pre-bundled at compile time)
+import globalStyles from './assets/global.css';
+
 import { mount } from '../../framework/compiler/bootstrap.js';
 import { AppComponent } from './pages/landing.js';
-mount(AppComponent, document.body);
+
+// Mount with global styles - styles are registered before component initializes
+mount(AppComponent, {
+  styles: [globalStyles],
+});

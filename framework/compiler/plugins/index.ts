@@ -20,11 +20,14 @@ export { ReactiveBindingPlugin } from './reactive-binding-compiler/reactive-bind
 // 5. Register Component Stripper - Removes compile-time-only code
 export { RegisterComponentStripperPlugin } from './register-component-stripper/register-component-stripper.js';
 
-// 6. HTML Bootstrap Injector - Injects root component HTML into index.html at build time
+// 6. Global CSS Bundler - Pre-bundles global.css as inline constant
+export { GlobalCSSBundlerPlugin } from './global-css-bundler/global-css-bundler.js';
+
+// 7. HTML Bootstrap Injector - Injects root component HTML into index.html at build time
 export { HTMLBootstrapInjectorPlugin, injectBootstrapHTML } from './html-bootstrap-injector/html-bootstrap-injector.js';
 
-// 7. Minification - Production-only selector and template minification
+// 8. Minification - Production-only selector and template minification
 export { MinificationPlugin, minifySelectorsInHTML } from './minification/minification.js';
 
-// 8. Post Build Processor - Copies assets, updates HTML, starts dev server
+// 9. Post Build Processor - Copies assets, updates dev server
 export { PostBuildPlugin } from './post-build-processor/post-build-processor.js';

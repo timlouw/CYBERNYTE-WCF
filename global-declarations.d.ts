@@ -1,6 +1,6 @@
 import { RoutesKeys } from './apps/client/router/routes.ts';
 
-declare module '*.css';
+// CSS module declarations are in framework/runtime/wcf-modules.d.ts
 
 declare global {
   /** Tagged template literal for HTML */

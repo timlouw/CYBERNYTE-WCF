@@ -11,6 +11,7 @@ import {
   ComponentPrecompilerPlugin,
   ReactiveBindingPlugin,
   RegisterComponentStripperPlugin,
+  GlobalCSSBundlerPlugin,
   HTMLBootstrapInjectorPlugin,
   MinificationPlugin,
   PostBuildPlugin,
@@ -27,20 +28,21 @@ const basePlugins = [
   ComponentPrecompilerPlugin, // 3. CTFE for component HTML generation
   ReactiveBindingPlugin, // 4. Compile reactive signal bindings
   RegisterComponentStripperPlugin, // 5. Remove compile-time-only code
-  HTMLBootstrapInjectorPlugin, // 6. Inject root component HTML into index.html
+  GlobalCSSBundlerPlugin, // 6. Pre-bundle global.css as inline constant
+  HTMLBootstrapInjectorPlugin, // 7. Inject root component HTML into index.html
 ];
 
 // Production adds MinificationPlugin (requires write: false)
 const prodPlugins = [
   ...basePlugins,
-  MinificationPlugin, // 7. Minify selectors + HTML/CSS templates (prod only)
-  PostBuildPlugin, // 8. Copy assets, update HTML, start server
+  MinificationPlugin, // 8. Minify selectors + HTML/CSS templates (prod only)
+  PostBuildPlugin, // 9. Copy assets, update HTML, start server
 ];
 
 // Dev skips minification
 const devPlugins = [
   ...basePlugins,
-  PostBuildPlugin, // 7. Copy assets, update HTML, start server
+  PostBuildPlugin, // 8. Copy assets, update HTML, start server
 ];
 
 const BaseConfig: BuildOptions = {
