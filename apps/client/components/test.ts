@@ -11,6 +11,7 @@ export const MyElementComponent = registerComponent<MyElementProps>(
     private _color = signal(this.getAttribute('color'));
     private _loading = signal(true);
     private _countries = signal(['USA', 'Canada', 'Mexico', 'Germany', 'France', 'Italy', 'Spain', 'Japan', 'China', 'India']);
+    private _clickCount = signal(0);
 
     render = () => {
       setTimeout(() => {
@@ -42,6 +43,12 @@ export const MyElementComponent = registerComponent<MyElementProps>(
       }, 2500);
 
       return html`
+        <div class="click-section">
+          <p>Click count: ${this._clickCount()}</p>
+          <button @click=${this._handleClick}>Option 1: Method Reference</button>
+          <button @click=${(e: Event) => this._handleClickWithEvent(e)}>Option 2: Arrow Function</button>
+          <button @click.stop=${this._handleClick}>Option 3: With .stop modifier</button>
+        </div>
         <div class="box" style="background-color: ${this._color()}"></div>
         <div class="box" style="background-color: ${this._color()}"></div>
         <div "${when(this._loading())}" class="box" style="background-color: ${this._color()}"></div>
@@ -59,6 +66,16 @@ export const MyElementComponent = registerComponent<MyElementProps>(
         )}
       `;
     };
+
+    private _handleClick() {
+      this._clickCount(this._clickCount() + 1);
+      console.log('Option 1: Simple click');
+    }
+
+    private _handleClickWithEvent(event: Event) {
+      this._clickCount(this._clickCount() + 1);
+      console.log('Option 4: Event target:', (event.target as HTMLElement).textContent);
+    }
 
     private _update = () => {
       this._color(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
@@ -79,6 +96,19 @@ export const MyElementComponent = registerComponent<MyElementProps>(
         background-color: white;
         border-radius: 5px;
         border: 2px solid green;
+      }
+
+      .click-section {
+        margin: 20px 0;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+
+      .click-section button {
+        margin: 5px;
+        padding: 8px 16px;
+        cursor: pointer;
       }
     `;
   },

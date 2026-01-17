@@ -58,7 +58,7 @@ export interface TextNode {
 
 export interface BindingInfo {
   element: HtmlElement;
-  type: 'text' | 'style' | 'attr' | 'when' | 'whenElse' | 'repeat';
+  type: 'text' | 'style' | 'attr' | 'when' | 'whenElse' | 'repeat' | 'event';
   signalName: string;
   signalNames?: string[]; // For complex when/whenElse expressions with multiple signals
   property?: string; // For style/attr bindings
@@ -83,6 +83,12 @@ export interface BindingInfo {
   emptyTemplate?: string;
   /** For 'repeat' bindings: custom trackBy function source code */
   trackByFn?: string;
+  /** For 'event' bindings: the event name (e.g., 'click', 'mouseenter') */
+  eventName?: string;
+  /** For 'event' bindings: modifiers like 'stop', 'prevent', 'self', 'enter' */
+  eventModifiers?: string[];
+  /** For 'event' bindings: the handler expression (method reference or arrow function) */
+  handlerExpression?: string;
 }
 
 export interface ParsedTemplate {
@@ -461,6 +467,41 @@ export function parseHtmlTemplate(html: string): ParsedTemplate {
           attrValue = '';
           attrValueStart = pos + 1;
           state = 'ATTR_VALUE_Q';
+        } else if (char === '$' && nextChar === '{') {
+          // Handle unquoted ${...} expression as attribute value
+          // This is common for event bindings like @click=${handler}
+          attrValueStart = pos;
+          let braceDepth = 0;
+          let i = pos;
+          while (i < html.length) {
+            if (html[i] === '$' && html[i + 1] === '{') {
+              braceDepth++;
+              i += 2;
+              continue;
+            }
+            if (html[i] === '{') {
+              // Regular brace inside the expression (e.g., arrow function body)
+              braceDepth++;
+            } else if (html[i] === '}') {
+              braceDepth--;
+              if (braceDepth === 0) {
+                // Found the end of the ${...} expression
+                attrValue = html.substring(attrValueStart, i + 1);
+                currentElement!.attributes.set(attrName, {
+                  name: attrName,
+                  value: attrValue,
+                  start: attrStart,
+                  end: i + 1,
+                  valueStart: attrValueStart,
+                  valueEnd: i + 1,
+                });
+                pos = i;
+                state = 'TAG_SPACE';
+                break;
+              }
+            }
+            i++;
+          }
         } else if (char !== ' ' && char !== '\t' && char !== '\n' && char !== '\r') {
           // Unquoted attribute value
           attrValue = char;
@@ -950,7 +991,7 @@ function extractHtmlTemplateContent(arg: string): string {
 }
 
 /**
- * Find bindings in element attributes (style, when, regular attributes)
+ * Find bindings in element attributes (style, when, events, regular attributes)
  */
 function findBindingsInAttributes(element: HtmlElement, bindings: BindingInfo[]): void {
   // Check for when directive ("${when(...)}" syntax)
@@ -985,6 +1026,32 @@ function findBindingsInAttributes(element: HtmlElement, bindings: BindingInfo[])
   }
 
   for (const [name, attr] of element.attributes) {
+    // Check for event bindings (@click, @click.stop, @keydown.enter, etc.)
+    if (name.startsWith('@')) {
+      // Parse event name and modifiers: @click.stop.prevent -> eventName: 'click', modifiers: ['stop', 'prevent']
+      const eventParts = name.slice(1).split('.'); // Remove '@' and split by '.'
+      const eventName = eventParts[0];
+      const modifiers = eventParts.slice(1);
+
+      // The value should be ${handler} where handler is a method reference or arrow function
+      const eventExprMatch = attr.value.match(/^\$\{(.+)\}$/s);
+      if (eventExprMatch) {
+        const handlerExpression = eventExprMatch[1].trim();
+        bindings.push({
+          element,
+          type: 'event',
+          signalName: '', // Not signal-based
+          eventName,
+          eventModifiers: modifiers,
+          handlerExpression,
+          expressionStart: attr.start,
+          expressionEnd: attr.end,
+          fullExpression: `@${name.slice(1)}="${attr.value}"`,
+        });
+      }
+      continue;
+    }
+
     // Check for style bindings
     if (name === 'style') {
       const styleExprRegex = /([\w-]+)\s*:\s*(\$\{this\.(\w+)\(\)\})/g;

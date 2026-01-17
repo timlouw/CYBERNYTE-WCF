@@ -99,6 +99,16 @@ interface RepeatBlock {
   itemBindings: BindingInfo[]; // Bindings inside item template
 }
 
+interface EventBinding {
+  id: string; // Unique ID for this event handler (e.g., 'e0', 'e1')
+  eventName: string; // Event type (e.g., 'click', 'mouseenter')
+  modifiers: string[]; // Event modifiers (e.g., ['stop', 'prevent'])
+  handlerExpression: string; // The handler code (method reference or arrow function)
+  elementId: string; // ID of the element with the event binding
+  startIndex: number; // Position in HTML where @event= starts
+  endIndex: number; // Position after closing quote
+}
+
 interface BindingInfo {
   id: string;
   signalName: string;
@@ -211,6 +221,7 @@ const findHtmlTemplates = (sourceFile: ts.SourceFile): TemplateInfo[] => {
  * - Expressions in attributes
  * - Nested same-name tags
  * - Complex template structures
+ * - Event bindings (@click, @mouseenter, etc.)
  */
 const processHtmlTemplateWithConditionals = (
   templateContent: string,
@@ -222,6 +233,7 @@ const processHtmlTemplateWithConditionals = (
   conditionals: ConditionalBlock[];
   whenElseBlocks: WhenElseBlock[];
   repeatBlocks: RepeatBlock[];
+  eventBindings: EventBinding[];
   nextId: number;
   hasConditionals: boolean;
 } => {
@@ -232,7 +244,9 @@ const processHtmlTemplateWithConditionals = (
   const conditionals: ConditionalBlock[] = [];
   const whenElseBlocks: WhenElseBlock[] = [];
   const repeatBlocks: RepeatBlock[] = [];
+  const eventBindings: EventBinding[] = [];
   let idCounter = startingId;
+  let eventIdCounter = 0;
 
   // Track which elements need IDs and what ID they get
   const elementIdMap = new Map<HtmlElement, string>();
@@ -414,6 +428,10 @@ const processHtmlTemplateWithConditionals = (
   }
 
   // Second pass: Process non-conditional bindings
+  // For text bindings, we wrap them in <span> elements for precise updates
+  // This handles both pure text elements and mixed content cases
+  const textBindingSpans = new Map<number, string>(); // Map expression position to span ID
+
   for (const binding of parsed.bindings) {
     // Skip if this element is inside a conditional
     if (elementsInsideConditionals.has(binding.element)) continue;
@@ -425,8 +443,26 @@ const processHtmlTemplateWithConditionals = (
     if (binding.type === 'whenElse') continue;
     // Skip 'repeat' bindings (they're handled separately)
     if (binding.type === 'repeat') continue;
+    // Skip 'event' bindings (they're handled separately below)
+    if (binding.type === 'event') continue;
 
-    // Get or assign ID for the element
+    // For text bindings, wrap in a span element for precise updates
+    if (binding.type === 'text') {
+      const spanId = `b${idCounter++}`;
+      textBindingSpans.set(binding.expressionStart, spanId);
+
+      bindings.push({
+        id: spanId,
+        signalName: binding.signalName,
+        type: 'text',
+        property: binding.property,
+        isInsideConditional: false,
+        conditionalId: undefined,
+      });
+      continue;
+    }
+
+    // Get or assign ID for the element (style/attr bindings)
     if (!elementIdMap.has(binding.element)) {
       elementIdMap.set(binding.element, `b${idCounter++}`);
     }
@@ -435,15 +471,49 @@ const processHtmlTemplateWithConditionals = (
     bindings.push({
       id: elementId,
       signalName: binding.signalName,
-      type: binding.type as 'text' | 'style' | 'attr',
+      type: binding.type as 'style' | 'attr',
       property: binding.property,
       isInsideConditional: false,
       conditionalId: undefined,
     });
   }
 
+  // Third pass: Process event bindings
+  for (const binding of parsed.bindings) {
+    if (binding.type !== 'event') continue;
+    if (!binding.eventName || !binding.handlerExpression) continue;
+
+    const eventId = `e${eventIdCounter++}`;
+
+    // Get or assign element ID for the event target
+    if (!elementIdMap.has(binding.element)) {
+      elementIdMap.set(binding.element, `b${idCounter++}`);
+    }
+    const elementId = elementIdMap.get(binding.element)!;
+
+    eventBindings.push({
+      id: eventId,
+      eventName: binding.eventName,
+      modifiers: binding.eventModifiers || [],
+      handlerExpression: binding.handlerExpression,
+      elementId,
+      startIndex: binding.expressionStart,
+      endIndex: binding.expressionEnd,
+    });
+  }
+
   // Generate the processed HTML output
-  const processedContent = generateProcessedHtml(templateContent, parsed, signalInitializers, elementIdMap, conditionals, whenElseBlocks, repeatBlocks);
+  const processedContent = generateProcessedHtml(
+    templateContent,
+    parsed,
+    signalInitializers,
+    elementIdMap,
+    conditionals,
+    whenElseBlocks,
+    repeatBlocks,
+    eventBindings,
+    textBindingSpans,
+  );
 
   return {
     processedContent,
@@ -451,6 +521,7 @@ const processHtmlTemplateWithConditionals = (
     conditionals,
     whenElseBlocks,
     repeatBlocks,
+    eventBindings,
     nextId: idCounter,
     hasConditionals: conditionals.length > 0 || whenElseBlocks.length > 0 || repeatBlocks.length > 0,
   };
@@ -830,9 +901,26 @@ const generateProcessedHtml = (
   conditionals: ConditionalBlock[],
   whenElseBlocks: WhenElseBlock[] = [],
   repeatBlocks: RepeatBlock[] = [],
+  eventBindings: EventBinding[] = [],
+  textBindingSpans: Map<number, string> = new Map(),
 ): string => {
   // Build list of edits to apply
   const edits: Array<{ start: number; end: number; replacement: string }> = [];
+
+  // Build map of element -> event bindings for data attribute injection
+  const elementEventMap = new Map<HtmlElement, EventBinding[]>();
+  for (const evt of eventBindings) {
+    // Find the element with this binding
+    for (const [element, id] of elementIdMap) {
+      if (id === evt.elementId) {
+        if (!elementEventMap.has(element)) {
+          elementEventMap.set(element, []);
+        }
+        elementEventMap.get(element)!.push(evt);
+        break;
+      }
+    }
+  }
 
   // Replace conditional elements with their processed versions or templates
   for (const cond of conditionals) {
@@ -888,26 +976,77 @@ const generateProcessedHtml = (
 
     const signalName = match[1];
     const value = signalInitializers.get(signalName);
-    const replacement = value !== undefined ? String(value) : '';
+    const valueStr = value !== undefined ? String(value) : '';
+
+    // Check if this is a text binding that should be wrapped in a span
+    const spanId = textBindingSpans.get(exprStart);
+    let replacement: string;
+    if (spanId) {
+      // Wrap in a span for precise text updates
+      replacement = `<span id="${spanId}">${valueStr}</span>`;
+    } else {
+      // Direct replacement (for style/attr bindings in attribute values)
+      replacement = valueStr;
+    }
 
     edits.push({ start: exprStart, end: exprEnd, replacement });
   }
 
-  // Add IDs to elements that need them (not inside conditionals, whenElse, or repeat)
+  // Remove @event attributes and prepare data-evt attributes for injection
+  // We'll track which elements need which data-evt-{type} attributes
+  const elementDataAttrs = new Map<HtmlElement, string[]>();
+
+  for (const binding of parsed.bindings) {
+    if (binding.type === 'event' && binding.eventName) {
+      // Find the corresponding EventBinding to get the handler ID
+      const eventBinding = eventBindings.find((eb) => eb.eventName === binding.eventName && eb.startIndex === binding.expressionStart);
+      if (eventBinding) {
+        // Remove the @event="..." attribute from the HTML
+        edits.push({
+          start: binding.expressionStart,
+          end: binding.expressionEnd,
+          replacement: '',
+        });
+
+        // Build the data attribute value: "e0" or "e0:stop:prevent" with modifiers
+        const attrValue = eventBinding.modifiers.length > 0 ? `${eventBinding.id}:${eventBinding.modifiers.join(':')}` : eventBinding.id;
+
+        // Track data-evt-{type}="{id}:{modifiers}" attribute to add
+        if (!elementDataAttrs.has(binding.element)) {
+          elementDataAttrs.set(binding.element, []);
+        }
+        elementDataAttrs.get(binding.element)!.push(`data-evt-${binding.eventName}="${attrValue}"`);
+      }
+    }
+  }
+
+  // Add IDs and event data attributes to elements that need them (not inside conditionals, whenElse, or repeat)
   for (const [element, id] of elementIdMap) {
     // Skip elements that are inside ranges
     const insideRange = allRanges.some((r) => element.tagStart >= r.start && element.tagStart < r.end);
     if (insideRange) continue;
 
-    // Check if element already has an id attribute
-    if (element.attributes.has('id')) continue;
+    // Build the attributes to inject
+    const attrsToAdd: string[] = [];
 
-    // Add ID after tag name
-    edits.push({
-      start: element.tagNameEnd,
-      end: element.tagNameEnd,
-      replacement: ` id="${id}"`,
-    });
+    // Add ID if element doesn't already have one
+    if (!element.attributes.has('id')) {
+      attrsToAdd.push(`id="${id}"`);
+    }
+
+    // Add any event data attributes for this element
+    const dataAttrs = elementDataAttrs.get(element);
+    if (dataAttrs) {
+      attrsToAdd.push(...dataAttrs);
+    }
+
+    if (attrsToAdd.length > 0) {
+      edits.push({
+        start: element.tagNameEnd,
+        end: element.tagNameEnd,
+        replacement: ' ' + attrsToAdd.join(' '),
+      });
+    }
   }
 
   // Apply edits in reverse order
@@ -941,8 +1080,8 @@ const generateBindingUpdateCode = (binding: BindingInfo): string => {
   } else if (binding.type === 'attr') {
     return `${elRef}.setAttribute('${binding.property}', v)`;
   } else {
-    // Text binding: update text node directly for minimal DOM mutation
-    return `${elRef}.firstChild.data = v`;
+    // Text binding: update span's textContent
+    return `${elRef}.textContent = v`;
   }
 };
 
@@ -960,8 +1099,8 @@ const generateInitialValueCode = (binding: BindingInfo): string => {
   } else if (binding.type === 'attr') {
     return `${elRef}.setAttribute('${binding.property}', ${signalCall})`;
   } else {
-    // Text binding
-    return `${elRef}.firstChild.data = ${signalCall}`;
+    // Text binding: update span's textContent
+    return `${elRef}.textContent = ${signalCall}`;
   }
 };
 
@@ -1003,6 +1142,7 @@ const generateInitBindingsFunction = (
   conditionals: ConditionalBlock[],
   whenElseBlocks: WhenElseBlock[] = [],
   repeatBlocks: RepeatBlock[] = [],
+  eventBindings: EventBinding[] = [],
 ): string => {
   const lines: string[] = [];
   lines.push('  initializeBindings = () => {');
@@ -1206,6 +1346,44 @@ const generateInitBindingsFunction = (
     lines.push(`    ${bindRepeatCall};`);
   }
 
+  // Generate event delegation setup
+  if (eventBindings.length > 0) {
+    // Group event bindings by event type
+    const eventsByType = new Map<string, EventBinding[]>();
+    for (const evt of eventBindings) {
+      if (!eventsByType.has(evt.eventName)) {
+        eventsByType.set(evt.eventName, []);
+      }
+      eventsByType.get(evt.eventName)!.push(evt);
+    }
+
+    // Build the event map object
+    const eventMapLines: string[] = [];
+    for (const [eventType, handlers] of eventsByType) {
+      const handlerEntries = handlers.map((h) => {
+        // Wrap handler expression to ensure 'this' context is preserved
+        // For method references like 'this._handleClick', wrap in arrow function
+        // For arrow functions like '(e) => this._method(e)', use as-is
+        let handlerCode = h.handlerExpression;
+        // Check if it's a simple method reference (this.methodName or this._methodName)
+        if (/^this\.\w+$/.test(handlerCode)) {
+          // It's a method reference - wrap in arrow to preserve 'this' and pass event
+          handlerCode = `(e) => ${handlerCode}.call(this, e)`;
+        } else if (/^this\._?\w+$/.test(handlerCode)) {
+          // It's a method reference (with underscore) - wrap in arrow to preserve 'this' and pass event
+          handlerCode = `(e) => ${handlerCode}.call(this, e)`;
+        }
+        // If it's already an arrow function, use as-is (it should have proper 'this' binding)
+        return `'${h.id}': ${handlerCode}`;
+      });
+      eventMapLines.push(`      ${eventType}: { ${handlerEntries.join(', ')} }`);
+    }
+
+    lines.push(`    ${BIND_FN.EVENTS}(r, {`);
+    lines.push(eventMapLines.join(',\n'));
+    lines.push('    });');
+  }
+
   lines.push('  };');
 
   return '\n\n' + lines.join('\n');
@@ -1255,6 +1433,7 @@ const transformComponentSource = (source: string, filePath: string): string | nu
   let allConditionals: ConditionalBlock[] = [];
   let allWhenElseBlocks: WhenElseBlock[] = [];
   let allRepeatBlocks: RepeatBlock[] = [];
+  let allEventBindings: EventBinding[] = [];
   let idCounter = 0;
   let lastProcessedTemplateContent = '';
   let hasConditionals = false;
@@ -1268,6 +1447,7 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     allConditionals = [...allConditionals, ...result.conditionals];
     allWhenElseBlocks = [...allWhenElseBlocks, ...result.whenElseBlocks];
     allRepeatBlocks = [...allRepeatBlocks, ...result.repeatBlocks];
+    allEventBindings = [...allEventBindings, ...result.eventBindings];
     idCounter = result.nextId;
     hasConditionals = hasConditionals || result.hasConditionals;
 
@@ -1295,7 +1475,7 @@ const transformComponentSource = (source: string, filePath: string): string | nu
   visitCss(sourceFile);
 
   // Generate code to inject
-  const initBindingsFunction = generateInitBindingsFunction(allBindings, allConditionals, allWhenElseBlocks, allRepeatBlocks);
+  const initBindingsFunction = generateInitBindingsFunction(allBindings, allConditionals, allWhenElseBlocks, allRepeatBlocks, allEventBindings);
 
   let staticTemplateCode = '';
   if (lastProcessedTemplateContent) {
@@ -1312,7 +1492,7 @@ const transformComponentSource = (source: string, filePath: string): string | nu
   }
 
   // Update import if we have bindings
-  const hasAnyBindings = allBindings.length > 0 || allConditionals.length > 0 || allWhenElseBlocks.length > 0 || allRepeatBlocks.length > 0;
+  const hasAnyBindings = allBindings.length > 0 || allConditionals.length > 0 || allWhenElseBlocks.length > 0 || allRepeatBlocks.length > 0 || allEventBindings.length > 0;
   if (hasAnyBindings && servicesImport) {
     const requiredFunctions: string[] = [];
     if (allBindings.some((b) => b.type === 'style')) requiredFunctions.push(BIND_FN.STYLE);
@@ -1328,6 +1508,8 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     if (hasComplexConditionals || allWhenElseBlocks.length > 0) requiredFunctions.push(BIND_FN.IF_EXPR);
     // Add __bindRepeat if there are repeat blocks
     if (allRepeatBlocks.length > 0) requiredFunctions.push(BIND_FN.REPEAT);
+    // Add __setupEventDelegation if there are event bindings
+    if (allEventBindings.length > 0) requiredFunctions.push(BIND_FN.EVENTS);
 
     if (requiredFunctions.length > 0) {
       const newImport = generateUpdatedImport(servicesImport, requiredFunctions);

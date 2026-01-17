@@ -1,5 +1,119 @@
 import { Signal } from '../signal/index.js';
 
+// ============================================================================
+// Event Delegation System
+// ============================================================================
+
+/**
+ * Event handler with optional modifiers.
+ * Modifiers are encoded in the handler ID: "e0" or "e0:stop:prevent"
+ */
+type EventHandlerMap = Map<string, (event: Event) => void>;
+
+/** Keyboard key codes for modifier support */
+const KEY_CODES: Record<string, string[]> = {
+  enter: ['Enter'],
+  tab: ['Tab'],
+  delete: ['Backspace', 'Delete'],
+  esc: ['Escape'],
+  escape: ['Escape'],
+  space: [' '],
+  up: ['ArrowUp'],
+  down: ['ArrowDown'],
+  left: ['ArrowLeft'],
+  right: ['ArrowRight'],
+};
+
+/**
+ * Set up event delegation for a component's shadow root.
+ * Attaches a single listener per event type at the shadow root boundary,
+ * then delegates to the appropriate handler based on data-evt-{id} attributes.
+ *
+ * Supports modifiers encoded in handler IDs:
+ * - .stop - calls event.stopPropagation()
+ * - .prevent - calls event.preventDefault()
+ * - .self - only trigger if event.target is the element itself
+ * - .once - remove handler after first invocation (handled at compile time)
+ * - .{keyCode} - for keyboard events, only trigger on specific keys
+ *
+ * @param root - The shadow root to attach delegation listeners to
+ * @param eventMap - Map of event types to handler maps (event type -> { handlerId -> handler })
+ * @returns Cleanup function to remove all delegation listeners
+ */
+export const __setupEventDelegation = (root: ShadowRoot, eventMap: Record<string, Record<string, (event: Event) => void>>): (() => void) => {
+  const cleanups: (() => void)[] = [];
+
+  for (const [eventType, handlers] of Object.entries(eventMap)) {
+    const handlerMap: EventHandlerMap = new Map(Object.entries(handlers));
+    const attrName = `data-evt-${eventType}`;
+
+    const delegatedHandler = (event: Event) => {
+      // Walk up from target to find the element with our data attribute
+      let target = event.target as Element | null;
+
+      while (target && target !== (root as unknown as Element)) {
+        if (target instanceof HTMLElement) {
+          const handlerIdWithModifiers = target.getAttribute(attrName);
+          if (handlerIdWithModifiers) {
+            // Parse handler ID and modifiers: "e0" or "e0:stop:prevent"
+            const parts = handlerIdWithModifiers.split(':');
+            const handlerId = parts[0];
+            const modifiers = new Set(parts.slice(1));
+
+            const handler = handlerMap.get(handlerId);
+            if (handler) {
+              // Check .self modifier - only trigger if target matches
+              if (modifiers.has('self') && event.target !== target) {
+                target = target.parentElement;
+                continue;
+              }
+
+              // Check keyboard modifiers for keyboard events
+              if (event instanceof KeyboardEvent) {
+                let keyMatched = true;
+                for (const mod of modifiers) {
+                  if (KEY_CODES[mod]) {
+                    keyMatched = KEY_CODES[mod].includes(event.key);
+                    if (!keyMatched) break;
+                  }
+                }
+                if (!keyMatched) {
+                  target = target.parentElement;
+                  continue;
+                }
+              }
+
+              // Apply modifiers
+              if (modifiers.has('prevent')) event.preventDefault();
+              if (modifiers.has('stop')) event.stopPropagation();
+
+              // Call the handler
+              handler.call(null, event);
+
+              // Stop walking up - we found and executed a handler
+              return;
+            }
+          }
+        }
+        target = target.parentElement;
+      }
+    };
+
+    // Use capture phase to ensure we catch all events, even those that don't bubble
+    root.addEventListener(eventType, delegatedHandler, true);
+
+    cleanups.push(() => {
+      root.removeEventListener(eventType, delegatedHandler, true);
+    });
+  }
+
+  return () => {
+    for (const cleanup of cleanups) {
+      cleanup();
+    }
+  };
+};
+
 // Reusable template element for parsing HTML
 const tempEl = document.createElement('template');
 
