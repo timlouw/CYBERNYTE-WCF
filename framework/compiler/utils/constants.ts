@@ -57,6 +57,7 @@ export const BIND_FN = {
   ATTR: '__bindAttr',
   IF: '__bindIf',
   IF_EXPR: '__bindIfExpr',
+  REPEAT: '__bindRepeat',
 } as const;
 
 /**

@@ -58,7 +58,7 @@ export interface TextNode {
 
 export interface BindingInfo {
   element: HtmlElement;
-  type: 'text' | 'style' | 'attr' | 'when' | 'whenElse';
+  type: 'text' | 'style' | 'attr' | 'when' | 'whenElse' | 'repeat';
   signalName: string;
   signalNames?: string[]; // For complex when/whenElse expressions with multiple signals
   property?: string; // For style/attr bindings
@@ -71,6 +71,18 @@ export interface BindingInfo {
   thenTemplate?: string;
   /** For 'whenElse' bindings: the else template HTML */
   elseTemplate?: string;
+  /** For 'repeat' bindings: the items expression (e.g., "this._countries()") */
+  itemsExpression?: string;
+  /** For 'repeat' bindings: the item variable name in the template function */
+  itemVar?: string;
+  /** For 'repeat' bindings: the index variable name (if used) */
+  indexVar?: string;
+  /** For 'repeat' bindings: the item template HTML */
+  itemTemplate?: string;
+  /** For 'repeat' bindings: the empty template HTML (shown when list is empty) */
+  emptyTemplate?: string;
+  /** For 'repeat' bindings: custom trackBy function source code */
+  trackByFn?: string;
 }
 
 export interface ParsedTemplate {
@@ -127,9 +139,27 @@ export function parseHtmlTemplate(html: string): ParsedTemplate {
           start: textStart,
           end: pos,
         });
+        // Check for bindings in text
+        findBindingsInText(textContent, textStart, parent, bindings);
+      } else {
+        // Text at root level (no parent element) - still check for bindings
+        // Create a virtual root element for binding detection
+        const virtualRoot: HtmlElement = {
+          tagName: '__root__',
+          tagStart: 0,
+          tagNameEnd: 0,
+          openTagEnd: 0,
+          closeTagStart: 0,
+          closeTagEnd: 0,
+          attributes: new Map(),
+          children: [],
+          parent: null,
+          isSelfClosing: false,
+          isVoid: false,
+          textContent: [],
+        };
+        findBindingsInText(textContent, textStart, virtualRoot, bindings);
       }
-      // Check for bindings in text
-      findBindingsInText(textContent, textStart, parent, bindings);
     }
     textContent = '';
   };
@@ -549,13 +579,13 @@ function createEmptyElement(tagName: string, tagStart: number, tagNameEnd: numbe
 }
 
 /**
- * Find ${this.signal()} and ${whenElse(...)} expressions in text content
+ * Find ${this.signal()}, ${whenElse(...)}, and ${repeat(...)} expressions in text content
  */
 function findBindingsInText(text: string, textStart: number, parent: HtmlElement | null, bindings: BindingInfo[]): void {
   if (!parent) return;
 
-  // First, find whenElse expressions and track their positions to exclude from simple signal detection
-  const whenElsePositions: Array<{ start: number; end: number }> = [];
+  // Track positions of complex expressions to exclude from simple signal detection
+  const complexExprPositions: Array<{ start: number; end: number }> = [];
 
   // Find ${whenElse(...)} expressions - need to handle nested html`` templates
   const whenElseRegex = /\$\{whenElse\(/g;
@@ -566,7 +596,7 @@ function findBindingsInText(text: string, textStart: number, parent: HtmlElement
     // Parse the whenElse expression to find its end, handling nested templates
     const parsed = parseWhenElseExpression(text, startPos);
     if (parsed) {
-      whenElsePositions.push({ start: startPos, end: parsed.end });
+      complexExprPositions.push({ start: startPos, end: parsed.end });
 
       bindings.push({
         element: parent,
@@ -583,15 +613,43 @@ function findBindingsInText(text: string, textStart: number, parent: HtmlElement
     }
   }
 
-  // Find simple ${this.signal()} expressions, excluding those inside whenElse
+  // Find ${repeat(...)} expressions
+  const repeatRegex = /\$\{repeat\(/g;
+  let repeatMatch: RegExpExecArray | null;
+
+  while ((repeatMatch = repeatRegex.exec(text)) !== null) {
+    const startPos = repeatMatch.index;
+    const parsed = parseRepeatExpression(text, startPos);
+    if (parsed) {
+      complexExprPositions.push({ start: startPos, end: parsed.end });
+
+      bindings.push({
+        element: parent,
+        type: 'repeat',
+        signalName: parsed.signals[0] || '',
+        signalNames: parsed.signals,
+        expressionStart: textStart + startPos,
+        expressionEnd: textStart + parsed.end,
+        fullExpression: text.substring(startPos, parsed.end),
+        itemsExpression: parsed.itemsExpression,
+        itemVar: parsed.itemVar,
+        indexVar: parsed.indexVar,
+        itemTemplate: parsed.itemTemplate,
+        emptyTemplate: parsed.emptyTemplate,
+        trackByFn: parsed.trackByFn,
+      });
+    }
+  }
+
+  // Find simple ${this.signal()} expressions, excluding those inside complex expressions
   const exprRegex = /\$\{this\.(\w+)\(\)\}/g;
   let match: RegExpExecArray | null;
 
   while ((match = exprRegex.exec(text)) !== null) {
     const pos = match.index;
-    // Skip if this position is inside a whenElse expression
-    const insideWhenElse = whenElsePositions.some((wp) => pos >= wp.start && pos < wp.end);
-    if (insideWhenElse) continue;
+    // Skip if this position is inside a complex expression
+    const insideComplex = complexExprPositions.some((cp) => pos >= cp.start && pos < cp.end);
+    if (insideComplex) continue;
 
     bindings.push({
       element: parent,
@@ -721,6 +779,160 @@ function parseWhenElseExpression(
     condition,
     thenTemplate,
     elseTemplate,
+    signals,
+  };
+}
+
+/**
+ * Parse a repeat expression to extract items expression, item variable, and template.
+ * Format: ${repeat(this._items(), (item, index) => html`<div>${item}</div>`)}
+ * or:     ${repeat(this._items(), (item) => html`<div>${item}</div>`)}
+ * or:     ${repeat(this._items(), (item) => html`<div>${item}</div>`, html`<p>Empty</p>`)}
+ * or:     ${repeat(this._items(), (item) => html`<div>${item}</div>`, null, (item) => item.id)}
+ */
+function parseRepeatExpression(
+  text: string,
+  startPos: number,
+): {
+  end: number;
+  itemsExpression: string;
+  itemVar: string;
+  indexVar?: string;
+  itemTemplate: string;
+  emptyTemplate?: string;
+  trackByFn?: string;
+  signals: string[];
+} | null {
+  // Start after "${repeat("
+  let pos = startPos + '${repeat('.length;
+  let parenDepth = 1; // We're inside repeat(
+
+  // Track the arguments: items expression, template function, optional empty template, optional trackBy
+  const args: string[] = [];
+  let currentArg = '';
+  let inBacktick = false;
+  let templateBraceDepth = 0;
+
+  while (pos < text.length) {
+    const char = text[pos];
+
+    // Handle backtick strings (html`...`)
+    if (char === '`' && !inBacktick) {
+      inBacktick = true;
+      templateBraceDepth = 0;
+      currentArg += char;
+      pos++;
+      continue;
+    }
+
+    if (char === '`' && inBacktick && templateBraceDepth === 0) {
+      // Closing backtick
+      inBacktick = false;
+      currentArg += char;
+      pos++;
+      continue;
+    }
+
+    // Handle ${...} inside backtick strings
+    if (inBacktick && char === '$' && text[pos + 1] === '{') {
+      templateBraceDepth++;
+      currentArg += '${';
+      pos += 2;
+      continue;
+    }
+
+    // Handle } inside template ${...}
+    if (inBacktick && char === '}' && templateBraceDepth > 0) {
+      templateBraceDepth--;
+      currentArg += char;
+      pos++;
+      continue;
+    }
+
+    if (inBacktick) {
+      currentArg += char;
+      pos++;
+      continue;
+    }
+
+    // Outside backticks - track parens
+    if (char === '(') {
+      parenDepth++;
+      currentArg += char;
+    } else if (char === ')') {
+      parenDepth--;
+      if (parenDepth === 0) {
+        // End of repeat arguments
+        args.push(currentArg.trim());
+        pos++; // Move past )
+        // Should hit } next
+        if (text[pos] === '}') {
+          pos++;
+        }
+        break;
+      }
+      currentArg += char;
+    } else if (char === ',' && parenDepth === 1) {
+      // Argument separator at top level
+      args.push(currentArg.trim());
+      currentArg = '';
+    } else {
+      currentArg += char;
+    }
+
+    pos++;
+  }
+
+  if (args.length < 2 || args.length > 4) {
+    return null; // Invalid repeat - needs 2-4 arguments (items, templateFn, [emptyTemplate], [trackBy])
+  }
+
+  const itemsExpression = args[0];
+
+  // Parse the arrow function: (item) => html`...` or (item, index) => html`...`
+  const templateFn = args[1];
+  const arrowMatch = templateFn.match(/^\(([^)]*)\)\s*=>\s*(.*)$/s);
+  if (!arrowMatch) {
+    return null;
+  }
+
+  const params = arrowMatch[1].split(',').map((p) => p.trim());
+  const itemVar = params[0];
+  const indexVar = params[1]; // May be undefined if only item param
+
+  const templateBody = arrowMatch[2].trim();
+  const itemTemplate = extractHtmlTemplateContent(templateBody);
+
+  // Parse optional empty template (third argument)
+  let emptyTemplate: string | undefined;
+  if (args.length >= 3 && args[2].trim() !== 'null' && args[2].trim() !== 'undefined') {
+    emptyTemplate = extractHtmlTemplateContent(args[2].trim());
+  }
+
+  // Parse optional trackBy function (fourth argument)
+  let trackByFn: string | undefined;
+  if (args.length === 4) {
+    trackByFn = args[3].trim();
+  }
+
+  // Extract signals from items expression (e.g., this._countries())
+  const signalRegex = /this\.(\w+)\(\)/g;
+  const signals: string[] = [];
+  let signalMatch: RegExpExecArray | null;
+  while ((signalMatch = signalRegex.exec(itemsExpression)) !== null) {
+    if (!signals.includes(signalMatch[1])) {
+      signals.push(signalMatch[1]);
+    }
+  }
+
+  return {
+    end: pos,
+    itemsExpression,
+    itemVar,
+    indexVar,
+    itemTemplate,
+    emptyTemplate,
+    trackByFn,
     signals,
   };
 }

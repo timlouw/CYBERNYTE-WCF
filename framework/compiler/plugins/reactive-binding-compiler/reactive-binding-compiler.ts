@@ -84,6 +84,21 @@ interface WhenElseBlock {
   nestedWhenElse: WhenElseBlock[]; // Nested whenElse blocks inside then/else
 }
 
+interface RepeatBlock {
+  id: string; // ID for the anchor element
+  signalName: string; // Primary signal (the array signal)
+  signalNames: string[]; // All signals in the expression
+  itemsExpression: string; // e.g., "this._countries()"
+  itemVar: string; // e.g., "country"
+  indexVar?: string; // e.g., "index" (optional)
+  itemTemplate: string; // HTML template for each item
+  emptyTemplate?: string; // HTML template shown when list is empty
+  trackByFn?: string; // Custom trackBy function source
+  startIndex: number; // Position in HTML where ${repeat starts
+  endIndex: number; // Position after }
+  itemBindings: BindingInfo[]; // Bindings inside item template
+}
+
 interface BindingInfo {
   id: string;
   signalName: string;
@@ -206,6 +221,7 @@ const processHtmlTemplateWithConditionals = (
   bindings: BindingInfo[];
   conditionals: ConditionalBlock[];
   whenElseBlocks: WhenElseBlock[];
+  repeatBlocks: RepeatBlock[];
   nextId: number;
   hasConditionals: boolean;
 } => {
@@ -215,6 +231,7 @@ const processHtmlTemplateWithConditionals = (
   const bindings: BindingInfo[] = [];
   const conditionals: ConditionalBlock[] = [];
   const whenElseBlocks: WhenElseBlock[] = [];
+  const repeatBlocks: RepeatBlock[] = [];
   let idCounter = startingId;
 
   // Track which elements need IDs and what ID they get
@@ -361,6 +378,41 @@ const processHtmlTemplateWithConditionals = (
     });
   }
 
+  // Process repeat bindings (list rendering)
+  for (const binding of parsed.bindings) {
+    if (binding.type !== 'repeat') continue;
+    if (!binding.itemsExpression || !binding.itemVar || !binding.itemTemplate) continue;
+
+    const signalNames = binding.signalNames || [binding.signalName];
+    const repeatId = `b${idCounter++}`;
+
+    // Process the item template to find any bindings inside it
+    // Note: Item templates may use ${item} or ${item.property} patterns, not signals
+    const itemTemplateProcessed = processItemTemplate(binding.itemTemplate, binding.itemVar, binding.indexVar, idCounter);
+    idCounter = itemTemplateProcessed.nextId;
+
+    // Process empty template if provided
+    let processedEmptyTemplate: string | undefined;
+    if (binding.emptyTemplate) {
+      processedEmptyTemplate = binding.emptyTemplate.replace(/\s+/g, ' ').trim();
+    }
+
+    repeatBlocks.push({
+      id: repeatId,
+      signalName: signalNames[0] || '',
+      signalNames,
+      itemsExpression: binding.itemsExpression,
+      itemVar: binding.itemVar,
+      indexVar: binding.indexVar,
+      itemTemplate: itemTemplateProcessed.processedContent,
+      emptyTemplate: processedEmptyTemplate,
+      trackByFn: binding.trackByFn,
+      startIndex: binding.expressionStart,
+      endIndex: binding.expressionEnd,
+      itemBindings: itemTemplateProcessed.bindings,
+    });
+  }
+
   // Second pass: Process non-conditional bindings
   for (const binding of parsed.bindings) {
     // Skip if this element is inside a conditional
@@ -371,6 +423,8 @@ const processHtmlTemplateWithConditionals = (
     if (binding.type === 'when') continue;
     // Skip 'whenElse' bindings (they're handled separately)
     if (binding.type === 'whenElse') continue;
+    // Skip 'repeat' bindings (they're handled separately)
+    if (binding.type === 'repeat') continue;
 
     // Get or assign ID for the element
     if (!elementIdMap.has(binding.element)) {
@@ -389,15 +443,16 @@ const processHtmlTemplateWithConditionals = (
   }
 
   // Generate the processed HTML output
-  const processedContent = generateProcessedHtml(templateContent, parsed, signalInitializers, elementIdMap, conditionals, whenElseBlocks);
+  const processedContent = generateProcessedHtml(templateContent, parsed, signalInitializers, elementIdMap, conditionals, whenElseBlocks, repeatBlocks);
 
   return {
     processedContent,
     bindings,
     conditionals,
     whenElseBlocks,
+    repeatBlocks,
     nextId: idCounter,
-    hasConditionals: conditionals.length > 0 || whenElseBlocks.length > 0,
+    hasConditionals: conditionals.length > 0 || whenElseBlocks.length > 0 || repeatBlocks.length > 0,
   };
 };
 
@@ -442,6 +497,42 @@ const replaceExpressionsWithValues = (html: string, signalInitializers: Map<stri
     const value = signalInitializers.get(signalName);
     return value !== undefined ? String(value) : '';
   });
+};
+
+/**
+ * Process an item template for repeat blocks.
+ * Handles ${item} and ${item.property} expressions, adding IDs for reactive updates.
+ */
+const processItemTemplate = (
+  templateContent: string,
+  _itemVar: string,
+  _indexVar: string | undefined,
+  startingId: number,
+): {
+  processedContent: string;
+  bindings: BindingInfo[];
+  nextId: number;
+} => {
+  // For repeat items, we don't add compile-time IDs because:
+  // 1. Each item is rendered dynamically at runtime
+  // 2. Static IDs would be duplicated across all items
+  // 3. Item bindings (${item} or ${item.property}) are interpolated at runtime
+  //
+  // Future enhancement: Support reactive bindings inside item templates
+  // by generating dynamic IDs at runtime
+
+  // Clean up whitespace - collapse all whitespace (including newlines) to single spaces
+  // This is critical because newlines inside tags would break HTML parsing
+  const result = templateContent
+    .replace(/\s+/g, ' ') // Collapse all whitespace to single space
+    .replace(/>\s+</g, '><') // Remove whitespace between tags
+    .trim();
+
+  return {
+    processedContent: result,
+    bindings: [],
+    nextId: startingId,
+  };
 };
 
 /**
@@ -738,6 +829,7 @@ const generateProcessedHtml = (
   elementIdMap: Map<HtmlElement, string>,
   conditionals: ConditionalBlock[],
   whenElseBlocks: WhenElseBlock[] = [],
+  repeatBlocks: RepeatBlock[] = [],
 ): string => {
   // Build list of edits to apply
   const edits: Array<{ start: number; end: number; replacement: string }> = [];
@@ -766,10 +858,22 @@ const generateProcessedHtml = (
     });
   }
 
+  // Replace repeat expressions with anchor template elements
+  for (const rep of repeatBlocks) {
+    // Use a template element as an anchor point for list insertion
+    const replacement = `<template id="${rep.id}"></template>`;
+    edits.push({
+      start: rep.startIndex,
+      end: rep.endIndex,
+      replacement,
+    });
+  }
+
   // Replace expressions in non-conditional parts
   const conditionalRanges = conditionals.map((c) => ({ start: c.startIndex, end: c.endIndex }));
   const whenElseRanges = whenElseBlocks.map((w) => ({ start: w.startIndex, end: w.endIndex }));
-  const allRanges = [...conditionalRanges, ...whenElseRanges];
+  const repeatRanges = repeatBlocks.map((r) => ({ start: r.startIndex, end: r.endIndex }));
+  const allRanges = [...conditionalRanges, ...whenElseRanges, ...repeatRanges];
 
   const exprRegex = /\$\{this\.(\w+)\(\)\}/g;
   let match: RegExpExecArray | null;
@@ -778,7 +882,7 @@ const generateProcessedHtml = (
     const exprStart = match.index;
     const exprEnd = exprStart + match[0].length;
 
-    // Skip if inside a conditional or whenElse range
+    // Skip if inside a conditional, whenElse, or repeat range
     const insideRange = allRanges.some((r) => exprStart >= r.start && exprStart < r.end);
     if (insideRange) continue;
 
@@ -789,9 +893,9 @@ const generateProcessedHtml = (
     edits.push({ start: exprStart, end: exprEnd, replacement });
   }
 
-  // Add IDs to elements that need them (not inside conditionals or whenElse)
+  // Add IDs to elements that need them (not inside conditionals, whenElse, or repeat)
   for (const [element, id] of elementIdMap) {
-    // Skip elements that are inside conditionals or whenElse
+    // Skip elements that are inside ranges
     const insideRange = allRanges.some((r) => element.tagStart >= r.start && element.tagStart < r.end);
     if (insideRange) continue;
 
@@ -894,7 +998,12 @@ const generateConsolidatedSubscription = (signalName: string, bindings: BindingI
  * Generate the complete initializeBindings function with cached refs and conditionals
  * Optimized: sets initial values directly, then subscribes with skipInitial
  */
-const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: ConditionalBlock[], whenElseBlocks: WhenElseBlock[] = []): string => {
+const generateInitBindingsFunction = (
+  bindings: BindingInfo[],
+  conditionals: ConditionalBlock[],
+  whenElseBlocks: WhenElseBlock[] = [],
+  repeatBlocks: RepeatBlock[] = [],
+): string => {
   const lines: string[] = [];
   lines.push('  initializeBindings = () => {');
   lines.push('    const r = this.shadowRoot;');
@@ -1055,6 +1164,48 @@ const generateInitBindingsFunction = (bindings: BindingInfo[], conditionals: Con
     lines.push(`    ${BIND_FN.IF_EXPR}(r, [${signalsArray}], () => !(${we.jsExpression}), '${we.elseId}', \`${escapedElseTemplate}\`, ${elseCode});`);
   }
 
+  // Generate repeat bindings
+  for (const rep of repeatBlocks) {
+    // Escape backticks and newlines - we need ${itemVar} to remain as template interpolation
+    // but newlines must become \n to prevent breaking HTML tags across lines
+    const escapedItemTemplate = rep.itemTemplate
+      .replace(/\\/g, '\\\\') // Escape backslashes first
+      .replace(/`/g, '\\`') // Escape backticks
+      .replace(/\n/g, '\\n') // Escape newlines
+      .replace(/\r/g, '\\r'); // Escape carriage returns
+
+    // Generate the template function that produces HTML for each item
+    // The ${itemVar} expressions will be interpolated at runtime
+    const templateFnParams = rep.indexVar ? `${rep.itemVar}, ${rep.indexVar}` : rep.itemVar;
+    const templateFn = `(${templateFnParams}) => \`${escapedItemTemplate}\``;
+
+    // Generate the binding initializer function for each item
+    // This handles reactive bindings within each item template
+    // Now receives array of elements for fragment support
+    const initItemBindingsFn = `(els, ${templateFnParams}) => []`; // For now, just return empty array
+
+    // Build the __bindRepeat call with optional emptyTemplate and trackBy
+    let bindRepeatCall = `${BIND_FN.REPEAT}(r, this.${rep.signalName}, '${rep.id}', ${templateFn}, ${initItemBindingsFn}`;
+
+    // Add emptyTemplate (or undefined if not provided but trackBy is)
+    if (rep.emptyTemplate) {
+      const escapedEmptyTemplate = rep.emptyTemplate.replace(/`/g, '\\`');
+      bindRepeatCall += `, \`${escapedEmptyTemplate}\``;
+    } else if (rep.trackByFn) {
+      // Need to pass undefined for emptyTemplate if trackBy is provided
+      bindRepeatCall += `, undefined`;
+    }
+
+    // Add trackBy options if provided
+    if (rep.trackByFn) {
+      bindRepeatCall += `, { trackBy: ${rep.trackByFn} }`;
+    }
+
+    bindRepeatCall += ')';
+
+    lines.push(`    ${bindRepeatCall};`);
+  }
+
   lines.push('  };');
 
   return '\n\n' + lines.join('\n');
@@ -1103,6 +1254,7 @@ const transformComponentSource = (source: string, filePath: string): string | nu
   let allBindings: BindingInfo[] = [];
   let allConditionals: ConditionalBlock[] = [];
   let allWhenElseBlocks: WhenElseBlock[] = [];
+  let allRepeatBlocks: RepeatBlock[] = [];
   let idCounter = 0;
   let lastProcessedTemplateContent = '';
   let hasConditionals = false;
@@ -1115,6 +1267,7 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     allBindings = [...allBindings, ...result.bindings];
     allConditionals = [...allConditionals, ...result.conditionals];
     allWhenElseBlocks = [...allWhenElseBlocks, ...result.whenElseBlocks];
+    allRepeatBlocks = [...allRepeatBlocks, ...result.repeatBlocks];
     idCounter = result.nextId;
     hasConditionals = hasConditionals || result.hasConditionals;
 
@@ -1142,7 +1295,7 @@ const transformComponentSource = (source: string, filePath: string): string | nu
   visitCss(sourceFile);
 
   // Generate code to inject
-  const initBindingsFunction = generateInitBindingsFunction(allBindings, allConditionals, allWhenElseBlocks);
+  const initBindingsFunction = generateInitBindingsFunction(allBindings, allConditionals, allWhenElseBlocks, allRepeatBlocks);
 
   let staticTemplateCode = '';
   if (lastProcessedTemplateContent) {
@@ -1159,7 +1312,7 @@ const transformComponentSource = (source: string, filePath: string): string | nu
   }
 
   // Update import if we have bindings
-  const hasAnyBindings = allBindings.length > 0 || allConditionals.length > 0 || allWhenElseBlocks.length > 0;
+  const hasAnyBindings = allBindings.length > 0 || allConditionals.length > 0 || allWhenElseBlocks.length > 0 || allRepeatBlocks.length > 0;
   if (hasAnyBindings && servicesImport) {
     const requiredFunctions: string[] = [];
     if (allBindings.some((b) => b.type === 'style')) requiredFunctions.push(BIND_FN.STYLE);
@@ -1173,6 +1326,8 @@ const transformComponentSource = (source: string, filePath: string): string | nu
     if (hasSimpleConditionals) requiredFunctions.push(BIND_FN.IF);
     // whenElse now compiles to two __bindIfExpr calls, so it needs IF_EXPR
     if (hasComplexConditionals || allWhenElseBlocks.length > 0) requiredFunctions.push(BIND_FN.IF_EXPR);
+    // Add __bindRepeat if there are repeat blocks
+    if (allRepeatBlocks.length > 0) requiredFunctions.push(BIND_FN.REPEAT);
 
     if (requiredFunctions.length > 0) {
       const newImport = generateUpdatedImport(servicesImport, requiredFunctions);
