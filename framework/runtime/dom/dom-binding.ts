@@ -114,17 +114,12 @@ const tempEl = document.createElement('template');
 /**
  * Shared element finder for nested bindings.
  * Searches within an array of elements for an element by ID or data-bind-id attribute.
- * This function is exported so components can reuse it instead of generating inline.
- *
- * @param elements - Array of elements to search within
- * @param id - The ID or data-bind-id to find
- * @returns The found element or null
  */
 export const __findEl = (elements: Element[], id: string): Element | null => {
   for (let i = 0; i < elements.length; i++) {
     const el = elements[i];
-    if (el.id === id || el.getAttribute?.('data-bind-id') === id) return el;
-    const found = el.querySelector?.(`#${id}, [data-bind-id="${id}"]`);
+    if (el.id === id) return el;
+    const found = el.querySelector?.(`#${id}`);
     if (found) return found;
   }
   return null;
@@ -316,14 +311,12 @@ export const __bindRepeat = <T>(
     tempEl.innerHTML = html;
     const fragment = tempEl.content.cloneNode(true) as DocumentFragment;
     const nodes = Array.from(fragment.childNodes);
+    const elements = nodes.filter((n): n is Element => n.nodeType === Node.ELEMENT_NODE);
 
-    // Insert into DOM
-    for (const node of nodes) {
-      container.insertBefore(node, refNode);
-    }
+    // Insert entire fragment at once (faster than node-by-node)
+    container.insertBefore(fragment, refNode);
 
     // Initialize bindings (these subscribe to itemSignal)
-    const elements = nodes.filter((n): n is Element => n.nodeType === Node.ELEMENT_NODE);
     const cleanups = initItemBindings(elements, itemSignal, index);
 
     // Set up event handlers for this item (if any)
@@ -485,12 +478,11 @@ export const __bindNestedRepeat = <P, T>(
     tempEl.innerHTML = html;
     const fragment = tempEl.content.cloneNode(true) as DocumentFragment;
     const nodes = Array.from(fragment.childNodes);
-
-    for (const node of nodes) {
-      container.insertBefore(node, refNode);
-    }
-
     const itemElements = nodes.filter((n): n is Element => n.nodeType === Node.ELEMENT_NODE);
+
+    // Insert entire fragment at once (faster than node-by-node)
+    container.insertBefore(fragment, refNode);
+
     const cleanups = initItemBindings(itemElements, itemSignal, index);
 
     return { id, itemSignal, nodes, cleanups };
