@@ -1,0 +1,33 @@
+import { Component, registerComponent } from "../../runtime/dom/index.js";
+import { signal } from "../../runtime/signal/signal.js";
+const AttrBinding = registerComponent(
+  { selector: "attrbinding-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<input id="b0" class="input-field" value="default">`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      const b0 = r.getElementById("b0");
+      b0.setAttribute("class", this._className());
+      b0.setAttribute("value", this._value());
+      this._className.subscribe((v) => {
+        b0.setAttribute("class", v);
+      }, true);
+      this._value.subscribe((v) => {
+        b0.setAttribute("value", v);
+      }, true);
+    };
+    _className = signal("input-field");
+    _value = signal("default");
+    render = () => {
+      return ``;
+    };
+    static styles = ``;
+  }
+);
+export {
+  AttrBinding
+};

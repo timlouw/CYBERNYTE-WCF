@@ -1,0 +1,59 @@
+============================================================
+PROJECT: CUSTOM TS FRAMEWORK COMPILER & RUNTIME REWRITE
+STRATEGY: HOLISTIC, AST-DRIVEN, ZERO-DEPENDENCY
+============================================================
+
+1. PRE-REQUISITE: ARCHITECTURAL AUDIT & UNDERSTANDING
+-----------------------------------------------------
+* DEEP AUDIT: Perform a holistic review of current runtime 
+  and compiler logic before any code is deleted.
+* MAP DEPENDENCIES: Document current dependency list to 
+  ensure 0 new packages are introduced.
+* REGEX ELIMINATION: Identify all Regex transformations and 
+  map them to TypeScript AST Node equivalents.
+* INTERDEPENDENCY MAPPING: Define the order of feature 
+  execution to prevent breaking downstream logic.
+
+2. CORE GOALS
+-------------
+* PRODUCTION STABILITY: Resilience against minor app-setup 
+  changes and configuration shifts.
+* DOMAIN REDUCTION: Minimize codebase surface area; 
+  aggressively remove redundant logic and legacy hacks.
+* ZERO NEW PACKAGES: Strictly utilize existing dependencies 
+  (esbuild, tsc/typescript).
+* AST-FIRST: 0% Regex for code transformation. Use AST 
+  exclusively unless technically impossible.
+
+3. COMPOSABLE ARCHITECTURE & INTEGRATION
+----------------------------------------
+* PLUGIN SYSTEM: Implement a "Pass-through" architecture 
+  where features act as modular plugins.
+* HOST COMPATIBILITY: Shared logic must be compatible with:
+  a) tsc (TypeScript Transformation API)
+  b) esbuild (Plugin API / onLoad)
+* FEATURE TOGGLES: Allow features to be switched on/off via 
+  a (rewritable) config file without breaking the pipeline.
+* RECURSIVE INTEGRITY: HTML directives, functions, and 
+  bindings must support infinite recursive nesting through 
+  proper tree-based parsing.
+
+4. OBSERVABILITY & DEBUGGING
+----------------------------
+* INTERMEDIATE OUTPUT: Implement a "Step-Trace" mode to 
+  output the state of the code after EACH feature plugin 
+  has executed.
+* SNAPSHOT VALIDATION: Continuous verification against 
+  existing test suites to ensure zero functional regressions.
+
+5. EXECUTION STEPS
+------------------
+Step A: Build the "Pipeline Runner" (The harness) and 
+        centralized configuration schema.
+Step B: Port features one-by-one into the AST-only format, 
+        ensuring they are fully configurable.
+Step C: Implement the "Recursive Parser" logic for nested 
+        HTML directives/bindings.
+Step D: Verify against existing tests and implement the 
+        "Debug Tap" for visual output inspection.
+============================================================

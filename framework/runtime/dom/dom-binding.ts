@@ -434,18 +434,20 @@ export const __bindRepeat = <T>(
 /**
  * Nested repeat binding that works within a parent repeat's item elements.
  * Similar to __bindRepeat but searches for elements within a provided element array
- * rather than a shadow root.
+ * and subscribes to a parent signal to trigger updates.
  *
  * @param elements - Array of elements to search within (from parent repeat item)
- * @param arraySignal - Signal containing the array
+ * @param parentSignal - Signal to subscribe to for updates (typically the parent item signal)
+ * @param getArray - Function that returns the array to iterate over
  * @param anchorId - ID of the template anchor element
  * @param templateFn - Function that generates HTML for each item
  * @param initItemBindings - Function that sets up bindings for each item
  * @param emptyTemplate - Optional template to show when array is empty
  */
-export const __bindNestedRepeat = <T>(
+export const __bindNestedRepeat = <P, T>(
   elements: Element[],
-  arraySignal: Signal<T[]>,
+  parentSignal: Signal<P>,
+  getArray: () => T[],
   anchorId: string,
   templateFn: (itemSignal: Signal<T>, index: number) => string,
   initItemBindings: (elements: Element[], itemSignal: Signal<T>, index: number) => (() => void)[],
@@ -541,11 +543,11 @@ export const __bindNestedRepeat = <T>(
   };
 
   // Initial render
-  reconcile(arraySignal());
+  reconcile(getArray());
 
-  // Subscribe to array changes
-  const unsubscribe = arraySignal.subscribe((items) => {
-    reconcile(items);
+  // Subscribe to parent signal changes - when parent changes, re-evaluate the array
+  const unsubscribe = parentSignal.subscribe(() => {
+    reconcile(getArray());
   }, true);
 
   return () => {

@@ -1,0 +1,28 @@
+import { Component, registerComponent } from "../../runtime/dom/index.js";
+import { signal } from "../../runtime/signal/signal.js";
+const SingleBinding = registerComponent(
+  { selector: "singlebinding-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<span><span id="b0">Initial</span></span>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      const b0 = r.getElementById("b0");
+      b0.textContent = this._text();
+      this._text.subscribe((v) => {
+        b0.textContent = v;
+      }, true);
+    };
+    _text = signal("Initial");
+    render = () => {
+      return ``;
+    };
+    static styles = ``;
+  }
+);
+export {
+  SingleBinding
+};

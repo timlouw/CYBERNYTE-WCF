@@ -67,6 +67,7 @@ interface ConditionalBlock {
   nestedBindings: BindingInfo[]; // Signal bindings inside this conditional
   nestedItemBindings: ItemBinding[]; // Item bindings inside this conditional (for conditionals inside repeats)
   nestedConditionals: ConditionalBlock[]; // Nested when blocks inside this conditional
+  nestedEventBindings: EventBinding[]; // Event bindings inside this conditional
 }
 
 interface WhenElseBlock {
@@ -273,7 +274,7 @@ const processHtmlTemplateWithConditionals = (
   const repeatBlocks: RepeatBlock[] = [];
   const eventBindings: EventBinding[] = [];
   let idCounter = startingId;
-  let eventIdCounter = 0;
+  const eventIdCounter = { value: 0 };
 
   // Track which elements need IDs and what ID they get
   const elementIdMap = new Map<HtmlElement, string>();
@@ -340,6 +341,12 @@ const processHtmlTemplateWithConditionals = (
     const nestedBindings: BindingInfo[] = [];
 
     for (const binding of condBindings) {
+      // Skip the 'when' binding itself
+      if (binding.type === 'when') continue;
+
+      // Skip event bindings - they're handled by processConditionalElementHtml
+      if (binding.type === 'event') continue;
+
       // Get or assign ID for the element
       let elementId: string;
       if (binding.element === condEl) {
@@ -352,9 +359,6 @@ const processHtmlTemplateWithConditionals = (
         }
         elementId = elementIdMap.get(binding.element)!;
       }
-
-      // Skip the 'when' binding itself
-      if (binding.type === 'when') continue;
 
       nestedBindings.push({
         id: elementId,
@@ -397,6 +401,9 @@ const processHtmlTemplateWithConditionals = (
 
       for (const binding of nestedCondBindings) {
         if (binding.type === 'when') continue;
+        // Skip event bindings - they're handled by processConditionalElementHtml
+        if (binding.type === 'event') continue;
+
         let nestedElementId: string;
         if (binding.element === nestedCondEl) {
           nestedElementId = nestedCondId;
@@ -417,7 +424,7 @@ const processHtmlTemplateWithConditionals = (
         });
       }
 
-      const nestedProcessedHtml = processConditionalElementHtml(nestedCondEl, templateContent, signalInitializers, elementIdMap, nestedCondId);
+      const nestedProcessedResult = processConditionalElementHtml(nestedCondEl, templateContent, signalInitializers, elementIdMap, nestedCondId, undefined, eventIdCounter);
 
       nestedConditionals.push({
         id: nestedCondId,
@@ -425,18 +432,19 @@ const processHtmlTemplateWithConditionals = (
         signalNames: nestedSignalNames,
         jsExpression: nestedJsExpression,
         initialValue: nestedInitialValue,
-        templateContent: nestedProcessedHtml,
+        templateContent: nestedProcessedResult.html,
         startIndex: nestedCondEl.tagStart,
         endIndex: nestedCondEl.closeTagEnd,
         nestedBindings: nestedNestedBindings,
         nestedItemBindings: [],
         nestedConditionals: [], // TODO: Support deeper nesting if needed
+        nestedEventBindings: nestedProcessedResult.eventBindings,
       });
     }
 
     // Generate the processed HTML for this conditional element
     // Pass nestedConditionals so nested when elements are replaced with template anchors
-    const processedCondHtml = processConditionalElementHtml(condEl, templateContent, signalInitializers, elementIdMap, conditionalId, nestedConditionals);
+    const processedCondResult = processConditionalElementHtml(condEl, templateContent, signalInitializers, elementIdMap, conditionalId, nestedConditionals, eventIdCounter);
 
     conditionals.push({
       id: conditionalId,
@@ -444,15 +452,17 @@ const processHtmlTemplateWithConditionals = (
       signalNames,
       jsExpression,
       initialValue,
-      templateContent: processedCondHtml,
+      templateContent: processedCondResult.html,
       startIndex: condEl.tagStart,
       endIndex: condEl.closeTagEnd,
       nestedBindings,
       nestedItemBindings: [],
       nestedConditionals,
+      nestedEventBindings: processedCondResult.eventBindings,
     });
 
     bindings.push(...nestedBindings);
+    eventBindings.push(...processedCondResult.eventBindings);
   }
 
   // Process whenElse bindings (inline conditional rendering)
@@ -626,7 +636,7 @@ const processHtmlTemplateWithConditionals = (
     if (binding.type !== 'event') continue;
     if (!binding.eventName || !binding.handlerExpression) continue;
 
-    const eventId = `e${eventIdCounter++}`;
+    const eventId = `e${eventIdCounter.value++}`;
 
     // Get or assign element ID for the event target
     if (!elementIdMap.has(binding.element)) {
@@ -671,7 +681,17 @@ const processHtmlTemplateWithConditionals = (
 };
 
 /**
- * Process a conditional element's HTML for the template string
+ * Process a conditional element's HTML for the template string.
+ *
+ * This handles:
+ * - Removing the when directive
+ * - Adding the conditional ID
+ * - Replacing signal expressions with initial values
+ * - Converting @event bindings to data-evt-* attributes
+ * - Adding IDs to nested elements
+ * - Replacing nested conditionals with template anchors
+ *
+ * @param eventIdCounter - Mutable counter for generating unique event IDs, will be incremented
  */
 const processConditionalElementHtml = (
   element: HtmlElement,
@@ -680,8 +700,10 @@ const processConditionalElementHtml = (
   elementIdMap: Map<HtmlElement, string>,
   conditionalId: string,
   nestedConditionalBlocks?: ConditionalBlock[],
-): string => {
+  eventIdCounter: { value: number } = { value: 0 },
+): { html: string; eventBindings: EventBinding[] } => {
   let html = getElementHtml(element, originalHtml);
+  const eventBindings: EventBinding[] = [];
 
   // Remove the when directive ("${when(...)}")
   if (element.whenDirective) {
@@ -694,6 +716,49 @@ const processConditionalElementHtml = (
 
   // Replace signal expressions with initial values
   html = replaceExpressionsWithValues(html, signalInitializers);
+
+  // Process @event bindings - convert to data-evt-* attributes
+  // Pattern: @eventName.modifier1.modifier2=${handlerExpression}
+  const eventAttrRegex = /@([\w.]+)=\$\{([^}]+)\}/g;
+  let eventMatch: RegExpExecArray | null;
+  const eventReplacements: Array<{ original: string; replacement: string; eventBinding: EventBinding }> = [];
+
+  while ((eventMatch = eventAttrRegex.exec(html)) !== null) {
+    const fullMatch = eventMatch[0];
+    const eventSpec = eventMatch[1]; // e.g., "click" or "click.stop.prevent"
+    const handlerExpression = eventMatch[2].trim();
+
+    // Parse event name and modifiers
+    const parts = eventSpec.split('.');
+    const eventName = parts[0];
+    const modifiers = parts.slice(1);
+
+    const eventId = `e${eventIdCounter.value++}`;
+
+    // Build data-evt attribute value
+    const attrValue = modifiers.length > 0 ? `${eventId}:${modifiers.join(':')}` : eventId;
+
+    // Store the replacement
+    eventReplacements.push({
+      original: fullMatch,
+      replacement: `data-evt-${eventName}="${attrValue}"`,
+      eventBinding: {
+        id: eventId,
+        eventName,
+        modifiers,
+        handlerExpression,
+        elementId: conditionalId, // Events on the conditional element itself
+        startIndex: 0, // Not used in conditional context
+        endIndex: 0,
+      },
+    });
+  }
+
+  // Apply event replacements
+  for (const { original, replacement, eventBinding } of eventReplacements) {
+    html = html.replace(original, replacement);
+    eventBindings.push(eventBinding);
+  }
 
   // Add IDs to nested elements that have bindings
   html = addIdsToNestedElements(html, element, elementIdMap, originalHtml);
@@ -729,7 +794,7 @@ const processConditionalElementHtml = (
   // Clean up whitespace
   html = html.replace(/\s+/g, ' ').replace(/\s+>/g, '>').replace(/\s>/g, '>');
 
-  return html;
+  return { html, eventBindings };
 };
 
 /**
@@ -789,7 +854,7 @@ const processItemTemplateRecursively = (
   const repeatBlocks: RepeatBlock[] = [];
 
   let idCounter = startingId;
-  let eventIdCounter = 0;
+  const eventIdCounter = { value: 0 };
   let itemEventIdCounter = 0;
 
   const elementIdMap = new Map<HtmlElement, string>();
@@ -839,6 +904,8 @@ const processItemTemplateRecursively = (
 
     for (const binding of condBindings) {
       if (binding.type === 'when') continue;
+      // Skip event bindings - they're handled by processConditionalElementHtml
+      if (binding.type === 'event') continue;
 
       let elementId: string;
       if (binding.element === condEl) {
@@ -860,7 +927,7 @@ const processItemTemplateRecursively = (
       });
     }
 
-    const processedCondHtml = processConditionalElementHtml(condEl, templateContent, signalInitializers, elementIdMap, conditionalId);
+    const processedCondResult = processConditionalElementHtml(condEl, templateContent, signalInitializers, elementIdMap, conditionalId, undefined, eventIdCounter);
 
     // Transform item variable references to use signal syntax and detect item bindings
     // For ${city} in the template, we need to:
@@ -868,10 +935,10 @@ const processItemTemplateRecursively = (
     // 2. Track this as an item binding for reactive updates
     const itemPattern = new RegExp(`\\$\\{\\s*${itemVar}\\s*\\}`, 'g');
     const condItemBindings: ItemBinding[] = [];
-    let transformedCondHtml = processedCondHtml;
+    let transformedCondHtml = processedCondResult.html;
 
     // Find all item variable references in the template
-    const itemMatches = [...processedCondHtml.matchAll(itemPattern)];
+    const itemMatches = [...processedCondResult.html.matchAll(itemPattern)];
     if (itemMatches.length > 0) {
       // We need to wrap the item reference in a span with an ID for binding
       let offset = 0;
@@ -910,9 +977,11 @@ const processItemTemplateRecursively = (
       nestedBindings,
       nestedItemBindings: condItemBindings,
       nestedConditionals: [], // TODO: Support nested when in item templates
+      nestedEventBindings: processedCondResult.eventBindings,
     });
 
     signalBindings.push(...nestedBindings);
+    eventBindings.push(...processedCondResult.eventBindings);
   }
 
   // Process whenElse bindings (recursive)
@@ -1046,7 +1115,7 @@ const processItemTemplateRecursively = (
         });
       } else {
         // Component-level event
-        const eventId = `e${eventIdCounter++}`;
+        const eventId = `e${eventIdCounter.value++}`;
         if (!elementIdMap.has(binding.element)) {
           elementIdMap.set(binding.element, `b${idCounter++}`);
         }
@@ -1336,6 +1405,7 @@ const processSubTemplateWithNesting = (
   const whenElseBlocks: WhenElseBlock[] = [];
   let idCounter = startingId;
   const elementIdMap = new Map<HtmlElement, string>();
+  const eventIdCounter = { value: 0 };
 
   // Find conditional elements (those with when directive)
   const conditionalElements = findElementsWithWhenDirective(parsed.roots);
@@ -1382,6 +1452,8 @@ const processSubTemplateWithNesting = (
 
     for (const binding of condBindings) {
       if (binding.type === 'when') continue;
+      // Skip event bindings - they're handled by processConditionalElementHtml
+      if (binding.type === 'event') continue;
 
       let elementId: string;
       if (binding.element === condEl) {
@@ -1403,7 +1475,7 @@ const processSubTemplateWithNesting = (
       });
     }
 
-    const processedCondHtml = processConditionalElementHtml(condEl, templateContent, signalInitializers, elementIdMap, conditionalId);
+    const processedCondResult = processConditionalElementHtml(condEl, templateContent, signalInitializers, elementIdMap, conditionalId, undefined, eventIdCounter);
 
     conditionals.push({
       id: conditionalId,
@@ -1411,12 +1483,13 @@ const processSubTemplateWithNesting = (
       signalNames,
       jsExpression,
       initialValue,
-      templateContent: processedCondHtml,
+      templateContent: processedCondResult.html,
       startIndex: condEl.tagStart,
       endIndex: condEl.closeTagEnd,
       nestedBindings,
       nestedItemBindings: [],
       nestedConditionals: [], // TODO: Support nested when in processSimpleTemplate
+      nestedEventBindings: processedCondResult.eventBindings,
     });
 
     bindings.push(...nestedBindings);
@@ -2264,7 +2337,24 @@ const generateInitBindingsFunction = (
           }
 
           // Generate the nested repeat call
-          nestedRepeatLines.push(`${BIND_FN.NESTED_REPEAT}(els, this.${nestedRep.signalName}, '${nestedRep.id}', ${nestedTemplateFn}, ${nestedInitBindingsFn})`);
+          // Determine how to access the nested array:
+          // - If it references the parent item var (e.g., "item.children"), transform to use parent item signal
+          // - If it's a component signal (e.g., "this._items()"), use as-is
+          let nestedArrayExpr: string;
+          const refsParentItem = new RegExp(`\\b${rep.itemVar}\\b`).test(nestedRep.itemsExpression);
+
+          if (refsParentItem) {
+            // Transform item.children to item$().children
+            nestedArrayExpr = nestedRep.itemsExpression.replace(new RegExp(`\\b${rep.itemVar}\\b`, 'g'), `${itemSignalVar}()`);
+          } else if (nestedRep.signalName && nestedRep.signalNames.length > 0) {
+            // It's a component signal reference
+            nestedArrayExpr = `this.${nestedRep.signalName}`;
+          } else {
+            // Use the full expression as-is (could be a method call or other expression)
+            nestedArrayExpr = nestedRep.itemsExpression;
+          }
+
+          nestedRepeatLines.push(`${BIND_FN.NESTED_REPEAT}(els, ${itemSignalVar}, () => ${nestedArrayExpr}, '${nestedRep.id}', ${nestedTemplateFn}, ${nestedInitBindingsFn})`);
         }
       }
 

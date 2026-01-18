@@ -1,0 +1,63 @@
+import { Component, registerComponent, __bindIf, __bindIfExpr, __setupEventDelegation } from "../../runtime/dom/index.js";
+import { signal } from "../../runtime/signal/signal.js";
+const ComplexCombined = registerComponent(
+  { selector: "complexcombined-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<div id="b4" class="container"> <header> <h1><span id="b5">Dashboard</span></h1> <button id="b6" data-evt-click="e0" >Toggle</button> </header> <main id="b0"> <p id="b1">Welcome to the app</p> </main> <footer> <template id="b2"></template> <span id="b3">Not logged in</span> </footer> </div>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      const b4 = r.getElementById("b4");
+      const b5 = r.getElementById("b5");
+      b4.setAttribute("class", this._containerClass());
+      b5.textContent = this._title();
+      this._containerClass.subscribe((v) => {
+        b4.setAttribute("class", v);
+      }, true);
+      this._title.subscribe((v) => {
+        b5.textContent = v;
+      }, true);
+      __bindIf(r, this._showContent, "b0", `<main id="b0"> <p id="b1">Welcome to the app</p> </main>`, () => {
+        const b1 = r.getElementById("b1");
+        b1.textContent = this._description();
+        return [
+          this._description.subscribe((v) => {
+            b1.textContent = v;
+          }, true)
+        ];
+      });
+      __bindIf(r, this._isLoggedIn, "b2", `<span id="b2">Welcome, Guest</span>`, () => {
+        const b2 = r.getElementById("b2");
+        b2.textContent = this._username();
+        return [
+          this._username.subscribe((v) => {
+            b2.textContent = v;
+          }, true)
+        ];
+      });
+      __bindIfExpr(r, [this._isLoggedIn], () => !this._isLoggedIn(), "b3", `<span id="b3">Not logged in</span>`, () => []);
+      __setupEventDelegation(r, {
+        click: { "e0": (e) => this._toggle.call(this, e) }
+      });
+    };
+    _containerClass = signal("container");
+    _title = signal("Dashboard");
+    _showContent = signal(true);
+    _description = signal("Welcome to the app");
+    _isLoggedIn = signal(false);
+    _username = signal("Guest");
+    render = () => {
+      return ``;
+    };
+    _toggle() {
+      this._showContent(!this._showContent());
+    }
+    static styles = ``;
+  }
+);
+export {
+  ComplexCombined
+};

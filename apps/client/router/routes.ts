@@ -14,6 +14,10 @@ export const ROUTES = {
     componentModule: () => import('../pages/landing.js'),
     title: 'Home',
   },
+  '/test': {
+    componentModule: () => import('../pages/test-showcase.js'),
+    title: 'Test Showcase',
+  },
 } as const;
 
 export type RoutesKeys = keyof typeof ROUTES;

@@ -1,0 +1,27 @@
+import { Component, registerComponent, __setupEventDelegation } from "../../runtime/dom/index.js";
+const ClickHandler = registerComponent(
+  { selector: "clickhandler-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<button id="b0" data-evt-click="e0" >Click Me</button>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      __setupEventDelegation(r, {
+        click: { "e0": (e) => this._handleClick.call(this, e) }
+      });
+    };
+    render = () => {
+      return ``;
+    };
+    _handleClick() {
+      console.log("clicked");
+    }
+    static styles = ``;
+  }
+);
+export {
+  ClickHandler
+};

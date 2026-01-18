@@ -1,0 +1,26 @@
+import { Component, registerComponent, __setupEventDelegation } from "../../runtime/dom/index.js";
+const EventModifiers = registerComponent(
+  { selector: "eventmodifiers-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<button id="b0" data-evt-click="e0:stop:prevent" >Submit</button>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      __setupEventDelegation(r, {
+        click: { "e0": (e) => this._handleSubmit.call(this, e) }
+      });
+    };
+    render = () => {
+      return ``;
+    };
+    _handleSubmit() {
+    }
+    static styles = ``;
+  }
+);
+export {
+  EventModifiers
+};

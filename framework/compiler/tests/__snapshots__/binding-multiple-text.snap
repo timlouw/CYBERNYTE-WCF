@@ -1,0 +1,40 @@
+import { Component, registerComponent } from "../../runtime/dom/index.js";
+import { signal } from "../../runtime/signal/signal.js";
+const MultiBinding = registerComponent(
+  { selector: "multibinding-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<div><span><span id="b0">A</span></span><span><span id="b1">B</span></span><span><span id="b2">C</span></span></div>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      const b0 = r.getElementById("b0");
+      const b1 = r.getElementById("b1");
+      const b2 = r.getElementById("b2");
+      b0.textContent = this._a();
+      b1.textContent = this._b();
+      b2.textContent = this._c();
+      this._a.subscribe((v) => {
+        b0.textContent = v;
+      }, true);
+      this._b.subscribe((v) => {
+        b1.textContent = v;
+      }, true);
+      this._c.subscribe((v) => {
+        b2.textContent = v;
+      }, true);
+    };
+    _a = signal("A");
+    _b = signal("B");
+    _c = signal("C");
+    render = () => {
+      return ``;
+    };
+    static styles = ``;
+  }
+);
+export {
+  MultiBinding
+};

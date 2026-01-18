@@ -1,0 +1,57 @@
+import { Component, registerComponent, __setupEventDelegation } from "../../runtime/dom/index.js";
+import { signal } from "../../runtime/signal/signal.js";
+const DeepNesting = registerComponent(
+  { selector: "deepnesting-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<div id="b0" class="l1 level-1"> <div id="b1" class="l2 level-2"> <div id="b2" class="l3 level-3"> <div id="b3" class="l4 level-4"> <div class="l5"> <span><span id="b4">Deep Content</span></span> <button id="b5" data-evt-click="e0" >Action</button> </div> </div> </div> </div> </div>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      const b0 = r.getElementById("b0");
+      const b1 = r.getElementById("b1");
+      const b2 = r.getElementById("b2");
+      const b3 = r.getElementById("b3");
+      const b4 = r.getElementById("b4");
+      b0.setAttribute("class", this._c1());
+      b1.setAttribute("class", this._c2());
+      b2.setAttribute("class", this._c3());
+      b3.setAttribute("class", this._c4());
+      b4.textContent = this._deepText();
+      this._c1.subscribe((v) => {
+        b0.setAttribute("class", v);
+      }, true);
+      this._c2.subscribe((v) => {
+        b1.setAttribute("class", v);
+      }, true);
+      this._c3.subscribe((v) => {
+        b2.setAttribute("class", v);
+      }, true);
+      this._c4.subscribe((v) => {
+        b3.setAttribute("class", v);
+      }, true);
+      this._deepText.subscribe((v) => {
+        b4.textContent = v;
+      }, true);
+      __setupEventDelegation(r, {
+        click: { "e0": (e) => this._action.call(this, e) }
+      });
+    };
+    _c1 = signal("level-1");
+    _c2 = signal("level-2");
+    _c3 = signal("level-3");
+    _c4 = signal("level-4");
+    _deepText = signal("Deep Content");
+    render = () => {
+      return ``;
+    };
+    _action() {
+    }
+    static styles = ``;
+  }
+);
+export {
+  DeepNesting
+};

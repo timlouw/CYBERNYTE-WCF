@@ -1,0 +1,24 @@
+import { Component, registerComponent, __bindIfExpr } from "../../runtime/dom/index.js";
+import { signal } from "../../runtime/signal/signal.js";
+const WhenNegated = registerComponent(
+  { selector: "whennegated-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<div id="b0"><span>Not Hidden</span></div>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      __bindIfExpr(r, [this._hidden], () => !this._hidden(), "b0", `<div id="b0"><span>Not Hidden</span></div>`, () => []);
+    };
+    _hidden = signal(false);
+    render = () => {
+      return ``;
+    };
+    static styles = ``;
+  }
+);
+export {
+  WhenNegated
+};

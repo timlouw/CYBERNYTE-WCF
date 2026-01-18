@@ -9,55 +9,6 @@ export const AppComponent = registerComponent(
 
       return html`
         HELLO ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
-        ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })} ${MyElementComponent({ color: 'red' })}
       `;
     };
 

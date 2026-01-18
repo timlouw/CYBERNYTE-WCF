@@ -1,0 +1,21 @@
+import { Component, registerComponent } from "../../runtime/dom/shadow-dom.js";
+const SimpleStatic = registerComponent(
+  { selector: "simplestatic-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<div class="box">Hello World</div>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+    };
+    render = () => {
+      return ``;
+    };
+    static styles = ``;
+  }
+);
+export {
+  SimpleStatic
+};

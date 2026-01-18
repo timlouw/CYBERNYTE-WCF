@@ -1,0 +1,24 @@
+import { Component, registerComponent, __bindIf } from "../../runtime/dom/index.js";
+import { signal } from "../../runtime/signal/signal.js";
+const WhenDirective = registerComponent(
+  { selector: "whendirective-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<div id="b0"><span>Visible Content</span></div>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      __bindIf(r, this._visible, "b0", `<div id="b0"><span>Visible Content</span></div>`, () => []);
+    };
+    _visible = signal(true);
+    render = () => {
+      return ``;
+    };
+    static styles = ``;
+  }
+);
+export {
+  WhenDirective
+};

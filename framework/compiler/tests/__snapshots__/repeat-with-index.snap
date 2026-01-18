@@ -1,0 +1,34 @@
+import { Component, registerComponent, __bindRepeat, __findEl } from "../../runtime/dom/index.js";
+import { signal } from "../../runtime/signal/signal.js";
+const RepeatWithIndex = registerComponent(
+  { selector: "repeatwithindex-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<template id="b0"></template>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      __bindRepeat(r, this._items, "b0", (item$, index) => `<div>${index}: <span id="i1">${item$()}</span></div>`, (els, item$, index) => {
+        const $ = (id) => __findEl(els, id);
+        return [
+          item$.subscribe(() => {
+            let e;
+            const v = item$();
+            e = $("i1");
+            if (e) e.textContent = v;
+          }, true)
+        ];
+      });
+    };
+    _items = signal(["a", "b", "c"]);
+    render = () => {
+      return ``;
+    };
+    static styles = ``;
+  }
+);
+export {
+  RepeatWithIndex
+};

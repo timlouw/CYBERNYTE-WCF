@@ -1,0 +1,25 @@
+import { Component, registerComponent, __bindIfExpr } from "../../runtime/dom/index.js";
+import { signal } from "../../runtime/signal/signal.js";
+const WhenElseDirective = registerComponent(
+  { selector: "whenelsedirective-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<template id="b0"></template><div id="b1" class="content">Ready!</div>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      __bindIfExpr(r, [this._loading], () => this._loading(), "b0", `<div id="b0" class="loader">Loading...</div>`, () => []);
+      __bindIfExpr(r, [this._loading], () => !this._loading(), "b1", `<div id="b1" class="content">Ready!</div>`, () => []);
+    };
+    _loading = signal(false);
+    render = () => {
+      return ``;
+    };
+    static styles = ``;
+  }
+);
+export {
+  WhenElseDirective
+};

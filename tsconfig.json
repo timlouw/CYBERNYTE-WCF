@@ -20,5 +20,10 @@
   "include": [
     "**/*.ts",
     "framework/runtime/global-declarations.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "framework/compiler/tests/debug-output"
   ]
 }

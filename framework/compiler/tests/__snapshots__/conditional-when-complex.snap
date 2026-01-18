@@ -1,0 +1,26 @@
+import { Component, registerComponent, __bindIfExpr } from "../../runtime/dom/index.js";
+import { signal } from "../../runtime/signal/signal.js";
+const WhenComplex = registerComponent(
+  { selector: "whencomplex-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<div id="b0"><span>Complex</span></div>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      __bindIfExpr(r, [this._a, this._b, this._c], () => this._a() && this._b() || this._c(), "b0", `<div id="b0"><span>Complex</span></div>`, () => []);
+    };
+    _a = signal(true);
+    _b = signal(true);
+    _c = signal(false);
+    render = () => {
+      return ``;
+    };
+    static styles = ``;
+  }
+);
+export {
+  WhenComplex
+};

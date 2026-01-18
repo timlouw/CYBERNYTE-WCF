@@ -1,0 +1,32 @@
+import { Component, registerComponent, __setupEventDelegation } from "../../runtime/dom/index.js";
+const MultipleEvents = registerComponent(
+  { selector: "multipleevents-comp", type: "component" },
+  class extends Component {
+    static template = (() => {
+      const t = document.createElement("template");
+      t.innerHTML = `<div id="b0" data-evt-click="e0" data-evt-mouseenter="e1" data-evt-mouseleave="e2" >Interactive</div>`;
+      return t;
+    })();
+    initializeBindings = () => {
+      const r = this.shadowRoot;
+      __setupEventDelegation(r, {
+        click: { "e0": (e) => this._onClick.call(this, e) },
+        mouseenter: { "e1": (e) => this._onEnter.call(this, e) },
+        mouseleave: { "e2": (e) => this._onLeave.call(this, e) }
+      });
+    };
+    render = () => {
+      return ``;
+    };
+    _onClick() {
+    }
+    _onEnter() {
+    }
+    _onLeave() {
+    }
+    static styles = ``;
+  }
+);
+export {
+  MultipleEvents
+};

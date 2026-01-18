@@ -1,1 +1,0 @@
-List update callback? For "update every 10th row", the benchmark changes item.label without changing item.id. Current approach won't detect this. Options: (A) require signals inside list items, (B) add onUpdate callback to repeat(), (C) deep-compare item properties. (Recommend: A — signals are already your reactive primitive)
