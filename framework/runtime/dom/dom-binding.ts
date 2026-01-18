@@ -4,12 +4,6 @@ import { Signal, signal as createSignal } from '../signal/index.js';
 // Event Delegation System
 // ============================================================================
 
-/**
- * Event handler with optional modifiers.
- * Modifiers are encoded in the handler ID: "e0" or "e0:stop:prevent"
- */
-type EventHandlerMap = Map<string, (event: Event) => void>;
-
 /** Keyboard key codes for modifier support */
 const KEY_CODES: Record<string, string[]> = {
   enter: ['Enter'],
@@ -43,8 +37,8 @@ const KEY_CODES: Record<string, string[]> = {
 export const __setupEventDelegation = (root: ShadowRoot, eventMap: Record<string, Record<string, (event: Event) => void>>): (() => void) => {
   const cleanups: (() => void)[] = [];
 
-  for (const [eventType, handlers] of Object.entries(eventMap)) {
-    const handlerMap: EventHandlerMap = new Map(Object.entries(handlers));
+  for (const eventType in eventMap) {
+    const handlers = eventMap[eventType];
     const attrName = `data-evt-${eventType}`;
 
     const delegatedHandler = (event: Event) => {
@@ -58,12 +52,11 @@ export const __setupEventDelegation = (root: ShadowRoot, eventMap: Record<string
             // Parse handler ID and modifiers: "e0" or "e0:stop:prevent"
             const parts = handlerIdWithModifiers.split(':');
             const handlerId = parts[0];
-            const modifiers = new Set(parts.slice(1));
 
-            const handler = handlerMap.get(handlerId);
+            const handler = handlers[handlerId];
             if (handler) {
               // Check .self modifier - only trigger if target matches
-              if (modifiers.has('self') && event.target !== target) {
+              if (parts.includes('self') && event.target !== target) {
                 target = target.parentElement;
                 continue;
               }
@@ -71,7 +64,8 @@ export const __setupEventDelegation = (root: ShadowRoot, eventMap: Record<string
               // Check keyboard modifiers for keyboard events
               if (event instanceof KeyboardEvent) {
                 let keyMatched = true;
-                for (const mod of modifiers) {
+                for (let i = 1; i < parts.length; i++) {
+                  const mod = parts[i];
                   if (KEY_CODES[mod]) {
                     keyMatched = KEY_CODES[mod].includes(event.key);
                     if (!keyMatched) break;
@@ -84,8 +78,8 @@ export const __setupEventDelegation = (root: ShadowRoot, eventMap: Record<string
               }
 
               // Apply modifiers
-              if (modifiers.has('prevent')) event.preventDefault();
-              if (modifiers.has('stop')) event.stopPropagation();
+              if (parts.includes('prevent')) event.preventDefault();
+              if (parts.includes('stop')) event.stopPropagation();
 
               // Call the handler
               handler.call(null, event);
@@ -321,7 +315,7 @@ export const __bindRepeat = <T>(
     const html = templateFn(itemSignal, index);
     tempEl.innerHTML = html;
     const fragment = tempEl.content.cloneNode(true) as DocumentFragment;
-    const nodes: ChildNode[] = Array.from(fragment.childNodes);
+    const nodes = Array.from(fragment.childNodes);
 
     // Insert into DOM
     for (const node of nodes) {
@@ -490,7 +484,7 @@ export const __bindNestedRepeat = <P, T>(
     const html = templateFn(itemSignal, index);
     tempEl.innerHTML = html;
     const fragment = tempEl.content.cloneNode(true) as DocumentFragment;
-    const nodes: ChildNode[] = Array.from(fragment.childNodes);
+    const nodes = Array.from(fragment.childNodes);
 
     for (const node of nodes) {
       container.insertBefore(node, refNode);

@@ -43,9 +43,9 @@ export const signal = <T>(initialValue: T): Signal<T> => {
       value = newValue!;
       // Batch DOM updates via microtask (only if we have subscribers)
       if (subscribers) {
-        subscribers.forEach((callback) => {
+        for (const callback of subscribers) {
           scheduleUpdate(callback, value);
-        });
+        }
       }
     }
     return value;

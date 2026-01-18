@@ -36,8 +36,10 @@ import {
 interface ComponentImportInfo {
   importPath: string;
   componentNames: Set<string>;
+  allNamedImports: string[]; // All named imports in this declaration
   importStart: number;
   importEnd: number;
+  quoteChar: string; // Single or double quote used in import
 }
 
 const NAME = PLUGIN_NAME.COMPONENT;
@@ -61,20 +63,31 @@ const findComponentImports = (sourceFile: ts.SourceFile, knownComponents: Map<st
 
       const importPath = moduleSpecifier.text;
       const componentNames = new Set<string>();
+      const allNamedImports: string[] = [];
 
       for (const element of node.importClause.namedBindings.elements) {
         const importedName = element.name.text;
+        // Capture alias syntax: "Name as Alias" becomes "Name as Alias"
+        const fullImportText = element.getText(sourceFile);
+        allNamedImports.push(fullImportText);
+
         if (knownComponents.has(importedName)) {
           componentNames.add(importedName);
         }
       }
 
       if (componentNames.size > 0) {
+        // Determine quote character from module specifier
+        const specifierText = moduleSpecifier.getFullText(sourceFile);
+        const quoteChar = specifierText.includes("'") ? "'" : '"';
+
         imports.push({
           importPath,
           componentNames,
+          allNamedImports,
           importStart: node.getStart(sourceFile),
           importEnd: node.getEnd(),
+          quoteChar,
         });
       }
     }
@@ -111,24 +124,13 @@ const transformComponentImportsToSideEffects = (source: string, sourceFile: ts.S
 
     if (ctfedInThisImport.size === 0) continue;
 
-    // Get the original import statement text
-    const originalImport = source.substring(importInfo.importStart, importInfo.importEnd);
+    const { importPath, quoteChar, allNamedImports } = importInfo;
 
-    // Parse the import to get all named imports
-    const importMatch = originalImport.match(/import\s*\{([^}]+)\}\s*from\s*(['"])([^'"]+)\2/);
-    if (!importMatch) continue;
-
-    const allImports = importMatch[1]
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const importQuote = importMatch[2];
-    const importPath = importMatch[3];
-
-    // Filter out the CTFE'd components
-    const remainingImports = allImports.filter((imp) => {
-      // Handle "Name as Alias" syntax
-      const name = imp.split(/\s+as\s+/)[0].trim();
+    // Filter out the CTFE'd components using AST-extracted import names
+    const remainingImports = allNamedImports.filter((imp) => {
+      // Handle "Name as Alias" syntax - extract the original name
+      const asIndex = imp.indexOf(' as ');
+      const name = asIndex >= 0 ? imp.substring(0, asIndex).trim() : imp.trim();
       return !ctfedInThisImport.has(name);
     });
 
@@ -136,11 +138,11 @@ const transformComponentImportsToSideEffects = (source: string, sourceFile: ts.S
     let newImport = '';
 
     // Always add a side-effect import for the module (to keep registerComponent running)
-    newImport = `import ${importQuote}${importPath}${importQuote};`;
+    newImport = `import ${quoteChar}${importPath}${quoteChar};`;
 
     // If there are remaining non-component imports, add a named import for them
     if (remainingImports.length > 0) {
-      newImport += `\nimport { ${remainingImports.join(', ')} } from ${importQuote}${importPath}${importQuote};`;
+      newImport += `\nimport { ${remainingImports.join(', ')} } from ${quoteChar}${importPath}${quoteChar};`;
     }
 
     modifiedSource = modifiedSource.substring(0, importInfo.importStart) + newImport + modifiedSource.substring(importInfo.importEnd);

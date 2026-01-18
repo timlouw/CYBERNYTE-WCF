@@ -1182,3 +1182,222 @@ export function isElementInside(element: HtmlElement, container: HtmlElement): b
   }
   return false;
 }
+// ============================================================================
+// HTML Modification Utilities (Step C Consolidation)
+// ============================================================================
+
+/**
+ * Edit descriptor for HTML string modifications.
+ * Applied in reverse order (highest start index first) to avoid position shifts.
+ */
+export interface HtmlEdit {
+  start: number;
+  end: number;
+  replacement: string;
+}
+
+/**
+ * Apply a list of edits to an HTML string.
+ * Automatically sorts edits in reverse order to apply from end to start.
+ */
+export function applyHtmlEdits(html: string, edits: HtmlEdit[]): string {
+  // Sort by start position descending
+  const sorted = [...edits].sort((a, b) => b.start - a.start);
+  let result = html;
+  for (const edit of sorted) {
+    result = result.substring(0, edit.start) + edit.replacement + result.substring(edit.end);
+  }
+  return result;
+}
+
+/**
+ * Create an edit to inject an ID attribute into an element's opening tag.
+ * Returns null if the element already has an ID.
+ */
+export function createIdInjectionEdit(element: HtmlElement, id: string): HtmlEdit | null {
+  if (element.attributes.has('id')) {
+    return null;
+  }
+  return {
+    start: element.tagNameEnd,
+    end: element.tagNameEnd,
+    replacement: ` id="${id}"`,
+  };
+}
+
+/**
+ * Create an edit to inject a data attribute into an element's opening tag.
+ */
+export function createDataAttrEdit(element: HtmlElement, attrName: string, attrValue: string): HtmlEdit {
+  return {
+    start: element.tagNameEnd,
+    end: element.tagNameEnd,
+    replacement: ` ${attrName}="${attrValue}"`,
+  };
+}
+
+/**
+ * Create an edit to remove the when directive from an element.
+ */
+export function createWhenDirectiveRemovalEdit(element: HtmlElement): HtmlEdit | null {
+  if (!element.whenDirective || element.whenDirectiveStart === undefined || element.whenDirectiveEnd === undefined) {
+    return null;
+  }
+  return {
+    start: element.whenDirectiveStart,
+    end: element.whenDirectiveEnd,
+    replacement: '',
+  };
+}
+
+/**
+ * Create an edit to remove an event binding attribute (@event=${...}).
+ */
+export function createEventBindingRemovalEdit(binding: BindingInfo): HtmlEdit | null {
+  if (binding.type !== 'event') {
+    return null;
+  }
+  return {
+    start: binding.expressionStart,
+    end: binding.expressionEnd,
+    replacement: '',
+  };
+}
+
+/**
+ * Create edits to replace signal expressions with static values.
+ * Only replaces expressions outside of specified ranges (e.g., conditionals).
+ */
+export function createSignalReplacementEdits(
+  html: string,
+  signalValues: Map<string, string | number | boolean>,
+  excludeRanges: Array<{ start: number; end: number }> = [],
+): HtmlEdit[] {
+  const edits: HtmlEdit[] = [];
+  const exprRegex = /\$\{this\.(\w+)\(\)\}/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = exprRegex.exec(html)) !== null) {
+    const exprStart = match.index;
+    const exprEnd = exprStart + match[0].length;
+
+    // Skip if inside an excluded range
+    const insideExcluded = excludeRanges.some((r) => exprStart >= r.start && exprStart < r.end);
+    if (insideExcluded) continue;
+
+    const signalName = match[1];
+    const value = signalValues.get(signalName);
+    if (value !== undefined) {
+      edits.push({
+        start: exprStart,
+        end: exprEnd,
+        replacement: String(value),
+      });
+    }
+  }
+
+  return edits;
+}
+
+/**
+ * Extract event bindings from parsed template with full context.
+ * Returns enriched binding info including element IDs and modifiers.
+ */
+export interface EventBindingDescriptor {
+  element: HtmlElement;
+  eventName: string;
+  modifiers: string[];
+  handlerExpression: string;
+  expressionStart: number;
+  expressionEnd: number;
+}
+
+export function extractEventBindings(parsed: ParsedTemplate): EventBindingDescriptor[] {
+  const result: EventBindingDescriptor[] = [];
+
+  for (const binding of parsed.bindings) {
+    if (binding.type === 'event' && binding.eventName && binding.handlerExpression) {
+      result.push({
+        element: binding.element,
+        eventName: binding.eventName,
+        modifiers: binding.eventModifiers || [],
+        handlerExpression: binding.handlerExpression,
+        expressionStart: binding.expressionStart,
+        expressionEnd: binding.expressionEnd,
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Group bindings by their containing element.
+ */
+export function groupBindingsByElement(bindings: BindingInfo[]): Map<HtmlElement, BindingInfo[]> {
+  const map = new Map<HtmlElement, BindingInfo[]>();
+  for (const binding of bindings) {
+    if (!map.has(binding.element)) {
+      map.set(binding.element, []);
+    }
+    map.get(binding.element)!.push(binding);
+  }
+  return map;
+}
+
+/**
+ * Check if a position is inside any of the given ranges.
+ */
+export function isPositionInRanges(pos: number, ranges: Array<{ start: number; end: number }>): boolean {
+  return ranges.some((r) => pos >= r.start && pos < r.end);
+}
+
+/**
+ * Find all elements that need IDs assigned based on bindings.
+ * Returns elements with text, style, attr, or event bindings.
+ */
+export function findElementsNeedingIds(parsed: ParsedTemplate): HtmlElement[] {
+  const elementsSet = new Set<HtmlElement>();
+
+  for (const binding of parsed.bindings) {
+    if (binding.type === 'text' || binding.type === 'style' || binding.type === 'attr' || binding.type === 'event') {
+      elementsSet.add(binding.element);
+    }
+  }
+
+  return Array.from(elementsSet);
+}
+
+/**
+ * Create a unique ID generator function.
+ */
+export function createIdGenerator(prefix: string, startFrom = 0): () => string {
+  let counter = startFrom;
+  return () => `${prefix}${counter++}`;
+}
+
+/**
+ * Normalize HTML by collapsing whitespace.
+ * Preserves single spaces but removes excessive whitespace.
+ */
+export function normalizeHtmlWhitespace(html: string): string {
+  return html.replace(/\s+/g, ' ').replace(/\s+>/g, '>').replace(/>\s+</g, '><').trim();
+}
+
+/**
+ * Inject an ID into the first element of an HTML string.
+ * Used for whenElse template processing.
+ */
+export function injectIdIntoFirstElement(html: string, id: string): string {
+  // Find the first < that starts an element (not a closing tag)
+  const trimmed = html.trim();
+  const firstTagMatch = trimmed.match(/^<(\w+)/);
+  if (!firstTagMatch) {
+    return trimmed;
+  }
+
+  const tagName = firstTagMatch[1];
+  const tagNameEnd = tagName.length + 1; // +1 for '<'
+
+  return trimmed.substring(0, tagNameEnd) + ` id="${id}"` + trimmed.substring(tagNameEnd);
+}

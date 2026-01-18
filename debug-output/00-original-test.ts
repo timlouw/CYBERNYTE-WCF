@@ -1,0 +1,129 @@
+import { Component, registerComponent } from '../../../framework/runtime/dom/shadow-dom.js';
+import { signal } from '../../../framework/runtime/signal/signal.js';
+
+interface MyElementProps {
+  color: string;
+}
+
+export const MyElementComponent = registerComponent<MyElementProps>(
+  { selector: 'my-element', type: 'component' },
+  class extends Component {
+    private _color = signal(this.getAttribute('color'));
+    private _loading = signal(false);
+    private _loading2 = signal(true);
+    private _countries = signal(['USA', 'Canada', 'Mexico', 'Germany', 'France', 'Italy', 'Spain', 'Japan', 'China', 'India']);
+    private _cities = signal(['New York', 'Toronto', 'Mexico City']);
+    private _clickCount = signal(0);
+    private _class = signal('click-section');
+
+    render = () => {
+      setTimeout(() => {
+        this._update();
+      }, 500);
+
+      // Example 1: Remove item at index (splice)
+      setTimeout(() => {
+        this._countries(this._countries().toSpliced(2, 1));
+      }, 1000);
+
+      // Example 2: Add item at end
+      setTimeout(() => {
+        this._countries([...this._countries(), 'Brazil']);
+      }, 1500);
+
+      // Example 3: Update item at specific index
+      setTimeout(() => {
+        const arr = [...this._countries()];
+        arr[0] = 'United States';
+        this._countries(arr);
+      }, 2000);
+
+      // Example 4: Move item (swap positions)
+      setTimeout(() => {
+        const arr = [...this._countries()];
+        [arr[0], arr[1]] = [arr[1], arr[0]];
+        this._countries(arr);
+        this._class('click-section updated');
+      }, 2500);
+
+      return html`
+        <div class="${this._class()}">
+          <p>Click count: ${this._clickCount()}</p>
+          <button @click=${this._handleClick}>Option 1</button>
+          <button @click=${(e: Event) => this._handleClickWithEvent(e)}>Option 2</button>
+          <button @click.stop=${this._handleClick}>Option 3</button>
+        </div>
+        <div class="box" style="background-color: ${this._color()}"></div>
+        <div class="box" style="background-color: ${this._color()}"></div>
+        <div "${when(this._loading())}" class="box" style="background-color: ${this._color()}">
+          <div "${when(!this._loading2())}">loading 2</div>
+        </div>
+        <div "${when(this._loading())}" class="box" style="background-color: ${this._color()}"></div>
+        <div class="status">
+          ${whenElse(this._loading(), html`<div>Loading...</div>`, html`<div>Ready!</div>`)}
+        </div>
+        ${repeat(
+          this._countries(),
+          (country) => html`
+            <div class="${this._class()}">${country}</div>
+            ${country} ${country}
+            <div class="box2">${country}</div>
+            ${repeat(
+              this._cities(),
+              (city) => html`
+              <div "${when(this._loading())}">${city} inner loading</div>
+            `,
+            )}
+          `,
+        )}
+      `;
+    };
+
+    private _handleClick() {
+      this._clickCount(this._clickCount() + 1);
+      console.log('Option 1: Simple click');
+    }
+
+    private _handleClickWithEvent(event: Event) {
+      this._clickCount(this._clickCount() + 1);
+      console.log('Option 4: Event target:', (event.target as HTMLElement).textContent);
+    }
+
+    private _update = () => {
+      this._color(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
+      this._loading(!this._loading());
+      this._loading2(!this._loading2());
+    };
+
+    static styles = css`
+      .box {
+        width: 100%;
+        height: 20px;
+        border-radius: 5px;
+        border: 1px solid black;
+      }
+
+      .box2 {
+        width: 100%;
+        height: 20px;
+        border-radius: 5px;
+        border: 2px solid green;
+      }
+
+      .click-section {
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+
+      .click-section.updated {
+        background-color: lightgreen;
+      }
+
+      .click-section button {
+        margin: 5px;
+        padding: 8px 16px;
+        cursor: pointer;
+      }
+    `;
+  },
+);

@@ -24,6 +24,7 @@
   "exclude": [
     "node_modules",
     "dist",
+    "debug-output",
     "framework/compiler/tests/debug-output"
   ]
 }

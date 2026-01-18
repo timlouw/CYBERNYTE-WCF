@@ -45,9 +45,15 @@ import {
   findElementsWithWhenDirective,
   getElementHtml,
   getBindingsForElement,
+  injectIdIntoFirstElement,
   type HtmlElement,
   type ParsedTemplate,
 } from '../../utils/html-parser.js';
+
+// NOTE: Additional html-parser utilities available for future use:
+// - applyHtmlEdits, createIdInjectionEdit, createWhenDirectiveRemovalEdit
+// - createSignalReplacementEdits, extractEventBindings, groupBindingsByElement
+// - isPositionInRanges, normalizeHtmlWhitespace, HtmlEdit
 
 const NAME = PLUGIN_NAME.REACTIVE;
 
@@ -1665,15 +1671,6 @@ const addIdsToNestedElements = (processedHtml: string, rootElement: HtmlElement,
 };
 
 /**
- * Inject an ID into the first HTML element of a template string
- * E.g., "<div>Hello</div>" with id "b0" becomes "<div id="b0">Hello</div>"
- */
-const injectIdIntoFirstElement = (html: string, id: string): string => {
-  // Match the first opening tag and inject id after the tag name
-  return html.replace(/^(\s*<[a-zA-Z][a-zA-Z0-9-]*)(\s|>)/, `$1 id="${id}"$2`);
-};
-
-/**
  * Generate the final processed HTML output
  */
 const generateProcessedHtml = (
@@ -2339,18 +2336,16 @@ const generateInitBindingsFunction = (
           // Generate the nested repeat call
           // Determine how to access the nested array:
           // - If it references the parent item var (e.g., "item.children"), transform to use parent item signal
-          // - If it's a component signal (e.g., "this._items()"), use as-is
+          // - If it's a component signal (e.g., "this._items()"), use the full expression as-is
           let nestedArrayExpr: string;
           const refsParentItem = new RegExp(`\\b${rep.itemVar}\\b`).test(nestedRep.itemsExpression);
 
           if (refsParentItem) {
             // Transform item.children to item$().children
             nestedArrayExpr = nestedRep.itemsExpression.replace(new RegExp(`\\b${rep.itemVar}\\b`, 'g'), `${itemSignalVar}()`);
-          } else if (nestedRep.signalName && nestedRep.signalNames.length > 0) {
-            // It's a component signal reference
-            nestedArrayExpr = `this.${nestedRep.signalName}`;
           } else {
-            // Use the full expression as-is (could be a method call or other expression)
+            // Use the full expression as-is (e.g., "this._cities()" for component signals)
+            // This preserves the () call which is needed to get the actual array value
             nestedArrayExpr = nestedRep.itemsExpression;
           }
 
@@ -2677,6 +2672,12 @@ const transformComponentSource = (source: string, filePath: string): string | nu
 // ============================================================================
 // Plugin Export
 // ============================================================================
+
+/**
+ * Transform component source code - exposed for debug tap and testing.
+ * Returns null if the source is not a component with HTML templates.
+ */
+export { transformComponentSource as transformReactiveBindings };
 
 /**
  * Reactive Binding Plugin - Compiles signal bindings and conditionals at build time

@@ -10,6 +10,12 @@ export const serve: boolean = !!process.argv[4];
 export const useGzip: boolean = process.argv.includes('gzip');
 export const isProd: boolean = environment === 'prod';
 
+// Debug tap: write intermediate files after each plugin step
+// Usage: bun run build dev client --debug-tap
+// Output: ./debug-output/{step}-{plugin}-{file}.ts
+export const debugTap: boolean = process.argv.includes('--debug-tap');
+export const debugTapDir: string = './debug-output';
+
 // ============================================================================
 // Paths
 // ============================================================================
