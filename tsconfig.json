@@ -19,6 +19,6 @@
   },
   "include": [
     "**/*.ts",
-    "global-declarations.d.ts"
+    "framework/runtime/global-declarations.d.ts"
   ]
 }

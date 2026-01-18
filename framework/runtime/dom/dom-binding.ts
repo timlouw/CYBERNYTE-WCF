@@ -118,6 +118,25 @@ export const __setupEventDelegation = (root: ShadowRoot, eventMap: Record<string
 const tempEl = document.createElement('template');
 
 /**
+ * Shared element finder for nested bindings.
+ * Searches within an array of elements for an element by ID or data-bind-id attribute.
+ * This function is exported so components can reuse it instead of generating inline.
+ *
+ * @param elements - Array of elements to search within
+ * @param id - The ID or data-bind-id to find
+ * @returns The found element or null
+ */
+export const __findEl = (elements: Element[], id: string): Element | null => {
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i];
+    if (el.id === id || el.getAttribute?.('data-bind-id') === id) return el;
+    const found = el.querySelector?.(`#${id}, [data-bind-id="${id}"]`);
+    if (found) return found;
+  }
+  return null;
+};
+
+/**
  * Core conditional binding logic shared by __bindIf and __bindIfExpr
  */
 const bindConditional = (
@@ -230,20 +249,20 @@ interface ManagedItem<T> {
 
 /**
  * Fine-grained repeat binding that wraps each item in its own signal.
- * 
+ *
  * ## How it works:
  * - Each array item gets wrapped in an individual signal
  * - Template bindings subscribe to the item signal, not the array signal
  * - When item data changes, only that item's signal fires → O(1) DOM update
  * - No diffing algorithm needed for content changes
- * 
+ *
  * ## Performance characteristics:
  * - Create 1000 rows: Slightly slower (creates 1000 signals)
  * - Partial update: O(1) per item (just signal updates)
  * - Swap rows: O(1) DOM moves + signal reassignment
  * - Remove row: O(1)
  * - Append row: O(1)
- * 
+ *
  * @param root - Shadow root to render into
  * @param arraySignal - Signal containing the array
  * @param anchorId - ID of the template anchor element
@@ -264,18 +283,18 @@ export const __bindRepeat = <T>(
   // Managed items by stable ID
   const managedItems: ManagedItem<T>[] = [];
   let nextId = 0;
-  
+
   // Get anchor and container
   const anchor = root.getElementById(anchorId);
   if (!anchor) return () => {};
-  
+
   const container = anchor.parentNode as ParentNode;
   if (!container) return () => {};
-  
+
   // Empty state
   let emptyElement: Element | null = null;
   let emptyShowing = false;
-  
+
   const showEmpty = () => {
     if (emptyShowing || !emptyTemplate) return;
     emptyShowing = true;
@@ -283,36 +302,36 @@ export const __bindRepeat = <T>(
     emptyElement = (tempEl.content.cloneNode(true) as DocumentFragment).firstElementChild;
     if (emptyElement) container.insertBefore(emptyElement, anchor);
   };
-  
+
   const hideEmpty = () => {
     if (!emptyShowing || !emptyElement) return;
     emptyShowing = false;
     emptyElement.remove();
     emptyElement = null;
   };
-  
+
   /**
    * Create a new managed item with its own signal
    */
   const createItem = (item: T, index: number, refNode: Node): ManagedItem<T> => {
     const id = nextId++;
     const itemSignal = createSignal(item);
-    
+
     // Generate HTML with initial value
     const html = templateFn(itemSignal, index);
     tempEl.innerHTML = html;
     const fragment = tempEl.content.cloneNode(true) as DocumentFragment;
     const nodes: ChildNode[] = Array.from(fragment.childNodes);
-    
+
     // Insert into DOM
     for (const node of nodes) {
       container.insertBefore(node, refNode);
     }
-    
+
     // Initialize bindings (these subscribe to itemSignal)
     const elements = nodes.filter((n): n is Element => n.nodeType === Node.ELEMENT_NODE);
     const cleanups = initItemBindings(elements, itemSignal, index);
-    
+
     // Set up event handlers for this item (if any)
     if (itemEventHandlers) {
       for (const eventType in itemEventHandlers) {
@@ -323,7 +342,7 @@ export const __bindRepeat = <T>(
           const targets: Element[] = [];
           if (el.hasAttribute(`data-evt-${eventType}`)) targets.push(el);
           for (let i = 0; i < nested.length; i++) targets.push(nested[i]);
-          
+
           for (const target of targets) {
             const handlerId = target.getAttribute(`data-evt-${eventType}`)?.split(':')[0];
             if (handlerId && handlers[handlerId]) {
@@ -336,10 +355,10 @@ export const __bindRepeat = <T>(
         }
       }
     }
-    
+
     return { id, itemSignal, nodes, cleanups };
   };
-  
+
   /**
    * Remove a managed item and cleanup
    */
@@ -347,14 +366,14 @@ export const __bindRepeat = <T>(
     for (const cleanup of managed.cleanups) cleanup();
     for (const node of managed.nodes) node.remove();
   };
-  
+
   /**
    * Reconcile array changes - simple position-based approach
    */
   const reconcile = (newItems: T[]) => {
     const newLength = newItems?.length ?? 0;
     const oldLength = managedItems.length;
-    
+
     // Handle empty state
     if (newLength === 0) {
       for (const managed of managedItems) removeItem(managed);
@@ -363,7 +382,7 @@ export const __bindRepeat = <T>(
       return;
     }
     hideEmpty();
-    
+
     // Update existing items (just update their signals - DOM auto-updates)
     const minLength = Math.min(oldLength, newLength);
     for (let i = 0; i < minLength; i++) {
@@ -373,7 +392,7 @@ export const __bindRepeat = <T>(
         managed.itemSignal(newItems[i]);
       }
     }
-    
+
     // Remove excess items from the end
     if (newLength < oldLength) {
       for (let i = newLength; i < oldLength; i++) {
@@ -381,7 +400,7 @@ export const __bindRepeat = <T>(
       }
       managedItems.length = newLength;
     }
-    
+
     // Add new items at the end
     if (newLength > oldLength) {
       for (let i = oldLength; i < newLength; i++) {
@@ -390,15 +409,15 @@ export const __bindRepeat = <T>(
       }
     }
   };
-  
+
   // Initial render
   reconcile(arraySignal());
-  
+
   // Subscribe to array changes
   const unsubscribe = arraySignal.subscribe((items) => {
     reconcile(items);
   }, true);
-  
+
   // Cleanup
   return () => {
     unsubscribe();
@@ -416,7 +435,7 @@ export const __bindRepeat = <T>(
  * Nested repeat binding that works within a parent repeat's item elements.
  * Similar to __bindRepeat but searches for elements within a provided element array
  * rather than a shadow root.
- * 
+ *
  * @param elements - Array of elements to search within (from parent repeat item)
  * @param arraySignal - Signal containing the array
  * @param anchorId - ID of the template anchor element
@@ -432,30 +451,21 @@ export const __bindNestedRepeat = <T>(
   initItemBindings: (elements: Element[], itemSignal: Signal<T>, index: number) => (() => void)[],
   emptyTemplate?: string,
 ): (() => void) => {
-  // Find anchor element within the provided elements
-  const findById = (id: string): Element | null => {
-    for (const el of elements) {
-      if (el.id === id || el.getAttribute?.('data-bind-id') === id) return el;
-      const found = el.querySelector?.(`#${id}, [data-bind-id="${id}"]`);
-      if (found) return found;
-    }
-    return null;
-  };
-  
-  const anchor = findById(anchorId);
+  // Use the shared element finder
+  const anchor = __findEl(elements, anchorId);
   if (!anchor) return () => {};
-  
+
   const container = anchor.parentNode as ParentNode;
   if (!container) return () => {};
-  
+
   // Managed items
   const managedItems: ManagedItem<T>[] = [];
   let nextId = 0;
-  
+
   // Empty state
   let emptyElement: Element | null = null;
   let emptyShowing = false;
-  
+
   const showEmpty = () => {
     if (emptyShowing || !emptyTemplate) return;
     emptyShowing = true;
@@ -463,42 +473,42 @@ export const __bindNestedRepeat = <T>(
     emptyElement = (tempEl.content.cloneNode(true) as DocumentFragment).firstElementChild;
     if (emptyElement) container.insertBefore(emptyElement, anchor);
   };
-  
+
   const hideEmpty = () => {
     if (!emptyShowing || !emptyElement) return;
     emptyShowing = false;
     emptyElement.remove();
     emptyElement = null;
   };
-  
+
   const createItem = (item: T, index: number, refNode: Node): ManagedItem<T> => {
     const id = nextId++;
     const itemSignal = createSignal(item);
-    
+
     const html = templateFn(itemSignal, index);
     tempEl.innerHTML = html;
     const fragment = tempEl.content.cloneNode(true) as DocumentFragment;
     const nodes: ChildNode[] = Array.from(fragment.childNodes);
-    
+
     for (const node of nodes) {
       container.insertBefore(node, refNode);
     }
-    
+
     const itemElements = nodes.filter((n): n is Element => n.nodeType === Node.ELEMENT_NODE);
     const cleanups = initItemBindings(itemElements, itemSignal, index);
-    
+
     return { id, itemSignal, nodes, cleanups };
   };
-  
+
   const removeItem = (managed: ManagedItem<T>) => {
     for (const cleanup of managed.cleanups) cleanup();
     for (const node of managed.nodes) node.remove();
   };
-  
+
   const reconcile = (newItems: T[]) => {
     const newLength = newItems?.length ?? 0;
     const oldLength = managedItems.length;
-    
+
     if (newLength === 0) {
       for (const managed of managedItems) removeItem(managed);
       managedItems.length = 0;
@@ -506,7 +516,7 @@ export const __bindNestedRepeat = <T>(
       return;
     }
     hideEmpty();
-    
+
     const minLength = Math.min(oldLength, newLength);
     for (let i = 0; i < minLength; i++) {
       const managed = managedItems[i];
@@ -514,14 +524,14 @@ export const __bindNestedRepeat = <T>(
         managed.itemSignal(newItems[i]);
       }
     }
-    
+
     if (newLength < oldLength) {
       for (let i = newLength; i < oldLength; i++) {
         removeItem(managedItems[i]);
       }
       managedItems.length = newLength;
     }
-    
+
     if (newLength > oldLength) {
       for (let i = oldLength; i < newLength; i++) {
         const managed = createItem(newItems[i], i, anchor);
@@ -529,15 +539,15 @@ export const __bindNestedRepeat = <T>(
       }
     }
   };
-  
+
   // Initial render
   reconcile(arraySignal());
-  
+
   // Subscribe to array changes
   const unsubscribe = arraySignal.subscribe((items) => {
     reconcile(items);
   }, true);
-  
+
   return () => {
     unsubscribe();
     hideEmpty();

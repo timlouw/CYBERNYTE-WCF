@@ -61,6 +61,7 @@ export const BIND_FN = {
   REPEAT: '__bindRepeat',
   NESTED_REPEAT: '__bindNestedRepeat',
   EVENTS: '__setupEventDelegation',
+  FIND_EL: '__findEl',
 } as const;
 
 /**

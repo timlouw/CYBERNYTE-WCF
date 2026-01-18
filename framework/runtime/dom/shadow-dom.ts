@@ -92,19 +92,12 @@ class GlobalStyleManager {
   }
 
   /**
-   * Check if any global styles have been registered
-   */
-  hasStyles(): boolean {
-    return this.registeredStyles.length > 0;
-  }
-
-  /**
    * Adopt global + component sheets into a shadow root
    * @param shadowRoot - The shadow root to adopt styles into
    * @param componentSheet - The component-specific CSSStyleSheet
    */
   adoptStyles(shadowRoot: ShadowRoot, componentSheet: CSSStyleSheet): void {
-    if (this.hasStyles()) {
+    if (this.registeredStyles.length > 0) {
       // Global styles first (lower specificity), then component styles (higher specificity)
       shadowRoot.adoptedStyleSheets = [this.getGlobalSheet(), componentSheet];
     } else {

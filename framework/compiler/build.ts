@@ -14,6 +14,7 @@ import {
   GlobalCSSBundlerPlugin,
   HTMLBootstrapInjectorPlugin,
   MinificationPlugin,
+  DeadCodeEliminatorPlugin,
   PostBuildPlugin,
 } from './plugins/index.js';
 
@@ -36,7 +37,8 @@ const basePlugins = [
 const prodPlugins = [
   ...basePlugins,
   MinificationPlugin, // 8. Minify selectors + HTML/CSS templates (prod only)
-  PostBuildPlugin, // 9. Copy assets, update HTML, start server
+  DeadCodeEliminatorPlugin, // 9. Static analysis to remove dead code (prod only)
+  PostBuildPlugin, // 10. Copy assets, update HTML, start server
 ];
 
 // Dev skips minification
@@ -49,7 +51,7 @@ const BaseConfig: BuildOptions = {
   entryPoints: entryPoints,
   bundle: true,
   platform: 'browser',
-  target: ['es2020', 'chrome90', 'firefox88', 'safari14', 'edge90'], // Modern browsers for smaller output
+  target: ['es2022', 'chrome94', 'firefox93', 'safari15', 'edge94'], // ES2022 enables native class fields (no __publicField helper)
   outdir: distDir,
   treeShaking: true,
   logLevel: 'error',

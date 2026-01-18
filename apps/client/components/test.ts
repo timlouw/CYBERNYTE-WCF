@@ -68,9 +68,12 @@ export const MyElementComponent = registerComponent<MyElementProps>(
             <div class="${this._class()}">${country}</div>
             ${country} ${country}
             <div class="box2">${country}</div>
-            ${repeat(this._cities(), (city) => html`
+            ${repeat(
+              this._cities(),
+              (city) => html`
               <div "${when(this._loading())}">${city} inner loading</div>
-            `)}
+            `,
+            )}
           `,
         )}
       `;
@@ -106,7 +109,7 @@ export const MyElementComponent = registerComponent<MyElementProps>(
         border-radius: 5px;
         border: 2px solid green;
       }
-      
+
       .click-section {
         border: 1px solid #ccc;
         border-radius: 5px;

@@ -1,4 +1,4 @@
-import { RoutesKeys } from './apps/client/router/routes.ts';
+import { RoutesKeys } from '../../apps/client/router/routes.js';
 
 // CSS module declarations are in framework/runtime/wcf-modules.d.ts
 

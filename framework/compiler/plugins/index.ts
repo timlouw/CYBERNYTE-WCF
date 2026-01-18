@@ -29,5 +29,8 @@ export { HTMLBootstrapInjectorPlugin, injectBootstrapHTML } from './html-bootstr
 // 8. Minification - Production-only selector and template minification
 export { MinificationPlugin, minifySelectorsInHTML } from './minification/minification.js';
 
-// 9. Post Build Processor - Copies assets, updates dev server
+// 9. Dead Code Eliminator - Production-only static analysis to remove dead code
+export { DeadCodeEliminatorPlugin } from './dead-code-eliminator/dead-code-eliminator.js';
+
+// 10. Post Build Processor - Copies assets, updates dev server
 export { PostBuildPlugin } from './post-build-processor/post-build-processor.js';
